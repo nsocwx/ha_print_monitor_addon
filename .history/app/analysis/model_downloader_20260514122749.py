@@ -19,7 +19,7 @@ class ModelArtifacts:
 class ModelDownloader:
     """Downloads models from Hugging Face Hub."""
 
-    PRINTGUARD_REPO_ID = "nsocwx/PrintGuard"
+    PRINTGUARD_REPO_ID = "oliverbravery/PrintGuard"
     PRINTGUARD_SIDECARS = ("opt.json", "prototypes.pkl")
 
     DEFAULT_MODELS = {

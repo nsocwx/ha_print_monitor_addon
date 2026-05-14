@@ -244,7 +244,7 @@ model:
   device: "cpu"
 ```
 
-On startup, the app downloads `model.onnx`, `opt.json`, and `prototypes.pkl` from `oliverbravery/PrintGuard` if they are not already present. You can also mount the files manually and set `model_path`, `options_path`, and `prototypes_path` explicitly.
+On startup, the app downloads `model.onnx`, `opt.json`, and `prototypes.pkl` from `nsocwx/PrintGuard` if they are not already present. You can also mount the files manually and set `model_path`, `options_path`, and `prototypes_path` explicitly.
 
 ## Adding a Real ML Model
 
