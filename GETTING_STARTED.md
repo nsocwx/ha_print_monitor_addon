@@ -39,7 +39,7 @@ In Home Assistant, go to Developer Tools > States and find:
 - Or can be a service like `button.press`
 
 **Notify Service**: Look under Developer Tools > Services > domain: notify
-- Example: `notify.mobile_app_alex_phone`
+- Example: `notify.mobile_app_mobile_phone`
 
 ## Step 4: Create Configuration (2 minutes)
 
@@ -243,7 +243,7 @@ home_assistant:
 ```yaml
 home_assistant:
   notify_services:
-    - "notify.mobile_app_alex_phone"
+    - "notify.mobile_app_mobile_phone"
     - "notify.mobile_app_family_phone"
     - "notify.telegram"
 ```

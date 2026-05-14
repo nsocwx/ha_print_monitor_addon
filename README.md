@@ -103,7 +103,7 @@ home_assistant:
     target: "button.prusa_pause_print"
     data: {}
   notify_services:
-    - "notify.mobile_app_alex_phone"
+    - "notify.mobile_app_mobile_phone"
 
 monitoring:
   enabled: true

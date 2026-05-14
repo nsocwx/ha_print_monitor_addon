@@ -17,7 +17,7 @@ home_assistant:
     target: "button.prusa_pause_print"
     data: {}
   notify_services:
-    - "notify.mobile_app_alex_phone"
+    - "notify.mobile_app_mobile_phone"
     - "notify.mobile_app_family_phone"
 
 # Optional: define multiple printers. If omitted, the app uses the legacy
@@ -34,7 +34,7 @@ home_assistant:
 #       target: "button.prusa_pause_print"
 #       data: {}
 #     notify_services:
-#       - "notify.mobile_app_alex_phone"
+#       - "notify.mobile_app_mobile_phone"
 #   - id: "voron"
 #     name: "Voron"
 #     camera_entity: "camera.voron_camera"
