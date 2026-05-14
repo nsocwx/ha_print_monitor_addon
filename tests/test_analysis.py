@@ -1,9 +1,16 @@
 """Test image analysis."""
 import pytest
 import numpy as np
+import pickle
 from io import BytesIO
 from PIL import Image
 from app.analysis.baseline import BaselineAnalyzer
+from app.analysis.factory import AnalyzerFactory
+from app.analysis.onnx_analyzer import (
+    ONNXAnalyzer,
+    _TorchStorageBytes,
+    _TorchPrototypeUnpickler,
+)
 from app.analysis.base import AnalysisContext
 
 
@@ -71,3 +78,53 @@ async def test_consecutive_frames(analyzer):
     
     assert result1 is not None
     assert result2 is not None
+
+
+def test_factory_creates_onnx_analyzer():
+    """Test ONNX provider is registered."""
+    analyzer = AnalyzerFactory.create_analyzer(
+        "onnx",
+        model_path="/tmp/model.onnx",
+        options_path="/tmp/opt.json",
+        prototypes_path="/tmp/prototypes.pkl",
+        auto_download=False,
+    )
+
+    assert isinstance(analyzer, ONNXAnalyzer)
+    assert analyzer.model_path == "/tmp/model.onnx"
+
+
+def test_onnx_preprocess_shape():
+    """Test PrintGuard ONNX preprocessing output shape."""
+    analyzer = ONNXAnalyzer(
+        model_path="/tmp/model.onnx",
+        options_path="/tmp/opt.json",
+        prototypes_path="/tmp/prototypes.pkl",
+        auto_download=False,
+    )
+    image = Image.open(BytesIO(create_test_image()))
+
+    processed = analyzer.preprocess_image(image)
+
+    assert processed.shape == (1, 3, 224, 224)
+    assert processed.dtype == np.float32
+
+
+def test_torch_prototype_unpickler_without_torch():
+    """Test torch-style prototype tensors can load without torch installed."""
+    prototype_values = np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np.float32)
+    storage = _TorchStorageBytes(b"header" + prototype_values.astype("<f4").tobytes())
+    cache_data = {
+        "prototypes": storage.to_numpy(size=(2, 2), stride=(2, 1), offset=0),
+        "class_names": ["failure", "success"],
+        "defect_idx": 0,
+    }
+    buffer = BytesIO()
+    pickle.dump(cache_data, buffer)
+    buffer.seek(0)
+
+    loaded = _TorchPrototypeUnpickler(buffer).load()
+
+    assert loaded["class_names"] == ["failure", "success"]
+    assert loaded["defect_idx"] == 0
+    np.testing.assert_array_equal(loaded["prototypes"], prototype_values)

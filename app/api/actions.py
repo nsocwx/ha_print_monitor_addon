@@ -3,7 +3,7 @@ import logging
 from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlmodel import Session, select
-from app.core.config import AppConfig
+from app.core.config import AppConfig, load_config
 from app.core.database import get_session
 from app.models.event import PrinterEvent
 from app.api.schemas import ActionResponse
@@ -12,6 +12,11 @@ from app.services.home_assistant import HAService
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/actions", tags=["actions"])
+
+
+def get_app_config() -> AppConfig:
+    """Load current application config for action routes."""
+    return load_config()
 
 
 def verify_action_token(token: str, config: AppConfig) -> bool:
@@ -24,7 +29,7 @@ async def pause_print(
     event_id: str = Query(...),
     token: str = Query(...),
     session: Session = Depends(get_session),
-    config: AppConfig = Depends(lambda: None),  # Injected by app
+    config: AppConfig = Depends(get_app_config),
 ) -> ActionResponse:
     """Pause the printer."""
     if not verify_action_token(token, config):
@@ -41,12 +46,13 @@ async def pause_print(
     try:
         # Call Home Assistant service
         ha_service = HAService(config.home_assistant.url, config.home_assistant.token)
+        printer = config.get_printer(event.printer_id) or config.get_printers()[0]
 
         await ha_service.call_service(
-            domain=config.home_assistant.pause_service.domain,
-            service=config.home_assistant.pause_service.service,
-            target={"entity_id": config.home_assistant.pause_service.target},
-            service_data=config.home_assistant.pause_service.data,
+            domain=printer.pause_service.domain,
+            service=printer.pause_service.service,
+            target={"entity_id": printer.pause_service.target},
+            service_data=printer.pause_service.data,
         )
 
         # Update event
@@ -75,7 +81,7 @@ def ignore_event(
     event_id: str = Query(...),
     token: str = Query(...),
     session: Session = Depends(get_session),
-    config: AppConfig = Depends(lambda: None),
+    config: AppConfig = Depends(get_app_config),
 ) -> ActionResponse:
     """Ignore a print issue."""
     if not verify_action_token(token, config):
@@ -110,7 +116,7 @@ def snooze_event(
     minutes: int = Query(15),
     token: str = Query(...),
     session: Session = Depends(get_session),
-    config: AppConfig = Depends(lambda: None),
+    config: AppConfig = Depends(get_app_config),
 ) -> ActionResponse:
     """Snooze notifications for an event."""
     if not verify_action_token(token, config):
@@ -145,7 +151,7 @@ def acknowledge_event(
     event_id: str = Query(...),
     token: str = Query(...),
     session: Session = Depends(get_session),
-    config: AppConfig = Depends(lambda: None),
+    config: AppConfig = Depends(get_app_config),
 ) -> ActionResponse:
     """Acknowledge an event without ignoring it."""
     if not verify_action_token(token, config):

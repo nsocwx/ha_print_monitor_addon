@@ -33,12 +33,22 @@ class HomeAssistantConfig(BaseSettings):
     notify_services: List[str] = Field(default_factory=lambda: ["notify.mobile_app_phone"])
 
 
+class PrinterConfig(BaseSettings):
+    """Configuration for one monitored printer."""
+    id: str = "default"
+    name: str = "Default Printer"
+    camera_entity: str = "camera.printer"
+    printer_state_entity: str = "sensor.printer_status"
+    printing_states: List[str] = ["printing", "paused"]
+    pause_service: PauseServiceConfig = Field(default_factory=PauseServiceConfig)
+    notify_services: Optional[List[str]] = None
+
+
 class MonitoringConfig(BaseSettings):
     """Configuration for monitoring behavior."""
     enabled: bool = True
     frame_interval_seconds: int = 30
     confirmation_frames: int = 2
-    detection_threshold: float = 0.5
     certainty_threshold_notify: float = 0.7
     certainty_threshold_auto_pause: float = 0.85
     auto_pause_delay_minutes: int = 15
@@ -50,6 +60,10 @@ class ModelConfig(BaseSettings):
     model_config = {"protected_namespaces": ("settings_",)}
     provider: str = "baseline"
     model_path: Optional[str] = None
+    options_path: Optional[str] = None
+    prototypes_path: Optional[str] = None
+    auto_download: bool = True
+    models_dir: str = "/data/models/printguard"
     device: str = "cpu"
 
 
@@ -67,7 +81,9 @@ class RetentionConfig(BaseSettings):
 class AppConfig(BaseSettings):
     """Main application configuration."""
     app_base_url: str = "http://localhost:8080"
+    timezone: str = "UTC"
     home_assistant: HomeAssistantConfig = Field(default_factory=HomeAssistantConfig)
+    printers: List[PrinterConfig] = Field(default_factory=list)
     monitoring: MonitoringConfig = Field(default_factory=MonitoringConfig)
     model: ModelConfig = Field(default_factory=ModelConfig)
     security: SecurityConfig = Field(default_factory=SecurityConfig)
@@ -83,6 +99,13 @@ class AppConfig(BaseSettings):
             return HomeAssistantConfig(**v)
         return v
 
+    @field_validator("printers", mode="before")
+    @classmethod
+    def load_printers_config(cls, v):
+        if isinstance(v, list):
+            return [PrinterConfig(**printer) if isinstance(printer, dict) else printer for printer in v]
+        return v
+
     @field_validator("monitoring", mode="before")
     @classmethod
     def load_monitoring_config(cls, v):
@@ -96,6 +119,30 @@ class AppConfig(BaseSettings):
         if isinstance(v, dict):
             return ModelConfig(**v)
         return v
+
+    def get_printers(self) -> List[PrinterConfig]:
+        """Return configured printers, falling back to legacy single-printer config."""
+        if self.printers:
+            return self.printers
+
+        return [
+            PrinterConfig(
+                id="default",
+                name="Default Printer",
+                camera_entity=self.home_assistant.camera_entity,
+                printer_state_entity=self.home_assistant.printer_state_entity,
+                printing_states=self.home_assistant.printing_states,
+                pause_service=self.home_assistant.pause_service,
+                notify_services=self.home_assistant.notify_services,
+            )
+        ]
+
+    def get_printer(self, printer_id: str) -> Optional[PrinterConfig]:
+        """Get one printer config by ID."""
+        for printer in self.get_printers():
+            if printer.id == printer_id:
+                return printer
+        return None
 
     @field_validator("security", mode="before")
     @classmethod
@@ -154,12 +201,6 @@ def load_config() -> AppConfig:
         except ValueError:
             logger.warning(f"Invalid FRAME_INTERVAL_SECONDS: {frame_interval}")
 
-    if detection_threshold := os.getenv("DETECTION_THRESHOLD"):
-        try:
-            config.monitoring.detection_threshold = float(detection_threshold)
-        except ValueError:
-            logger.warning(f"Invalid DETECTION_THRESHOLD: {detection_threshold}")
-
     if action_token := os.getenv("ACTION_TOKEN"):
         config.security.action_token = action_token
 
@@ -172,6 +213,7 @@ def save_config(config: AppConfig) -> None:
     
     config_dict = {
         "app_base_url": config.app_base_url,
+        "timezone": config.timezone,
         "home_assistant": {
             "url": config.home_assistant.url,
             "token": config.home_assistant.token,
@@ -186,11 +228,27 @@ def save_config(config: AppConfig) -> None:
             },
             "notify_services": config.home_assistant.notify_services,
         },
+        "printers": [
+            {
+                "id": printer.id,
+                "name": printer.name,
+                "camera_entity": printer.camera_entity,
+                "printer_state_entity": printer.printer_state_entity,
+                "printing_states": printer.printing_states,
+                "pause_service": {
+                    "domain": printer.pause_service.domain,
+                    "service": printer.pause_service.service,
+                    "target": printer.pause_service.target,
+                    "data": printer.pause_service.data,
+                },
+                "notify_services": printer.notify_services,
+            }
+            for printer in config.printers
+        ],
         "monitoring": {
             "enabled": config.monitoring.enabled,
             "frame_interval_seconds": config.monitoring.frame_interval_seconds,
             "confirmation_frames": config.monitoring.confirmation_frames,
-            "detection_threshold": config.monitoring.detection_threshold,
             "certainty_threshold_notify": config.monitoring.certainty_threshold_notify,
             "certainty_threshold_auto_pause": config.monitoring.certainty_threshold_auto_pause,
             "auto_pause_delay_minutes": config.monitoring.auto_pause_delay_minutes,
@@ -199,6 +257,10 @@ def save_config(config: AppConfig) -> None:
         "model": {
             "provider": config.model.provider,
             "model_path": config.model.model_path,
+            "options_path": config.model.options_path,
+            "prototypes_path": config.model.prototypes_path,
+            "auto_download": config.model.auto_download,
+            "models_dir": config.model.models_dir,
             "device": config.model.device,
         },
         "security": {

@@ -15,6 +15,8 @@ class PrinterEvent(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
     # Printer context
+    printer_id: str = Field(default="default", index=True)
+    printer_name: str = Field(default="Default Printer")
     printer_state: str  # e.g., "printing", "paused"
     printer_state_at: datetime
 
@@ -69,6 +71,8 @@ class CameraCapture(SQLModel, table=True):
 
     id: Optional[int] = Field(default=None, primary_key=True)
     capture_id: str = Field(unique=True, index=True)
+    printer_id: str = Field(default="default", index=True)
+    printer_name: str = Field(default="Default Printer")
     captured_at: datetime = Field(default_factory=datetime.utcnow)
     file_path: str
     file_size: int

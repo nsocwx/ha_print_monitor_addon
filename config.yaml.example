@@ -1,6 +1,7 @@
 """Sample configuration file for HA Print Monitor."""
 
 app_base_url: "http://localhost:8080"
+timezone: "America/Chicago"
 
 home_assistant:
   url: "http://homeassistant.local:8123"
@@ -19,6 +20,32 @@ home_assistant:
     - "notify.mobile_app_alex_phone"
     - "notify.mobile_app_family_phone"
 
+# Optional: define multiple printers. If omitted, the app uses the legacy
+# home_assistant camera/printer/pause settings above as one default printer.
+# printers:
+#   - id: "prusa"
+#     name: "Prusa"
+#     camera_entity: "camera.prusa_camera"
+#     printer_state_entity: "sensor.prusa_print_status"
+#     printing_states: ["printing", "paused"]
+#     pause_service:
+#       domain: "button"
+#       service: "press"
+#       target: "button.prusa_pause_print"
+#       data: {}
+#     notify_services:
+#       - "notify.mobile_app_alex_phone"
+#   - id: "voron"
+#     name: "Voron"
+#     camera_entity: "camera.voron_camera"
+#     printer_state_entity: "sensor.voron_print_status"
+#     printing_states: ["printing", "paused"]
+#     pause_service:
+#       domain: "button"
+#       service: "press"
+#       target: "button.voron_pause_print"
+#       data: {}
+
 monitoring:
   enabled: true
   frame_interval_seconds: 30
@@ -29,8 +56,12 @@ monitoring:
   snooze_minutes: 15
 
 model:
-  provider: "baseline"  # baseline, yolo, onnx, etc.
-  model_path: null
+  provider: "baseline"  # baseline, onnx
+  model_path: null  # optional; onnx auto-downloads PrintGuard model.onnx if null
+  options_path: null
+  prototypes_path: null
+  auto_download: true
+  models_dir: "/data/models/printguard"
   device: "cpu"
 
 security:

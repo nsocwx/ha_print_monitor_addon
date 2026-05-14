@@ -1,13 +1,28 @@
 """API response schemas."""
 from pydantic import BaseModel
+from pydantic import field_serializer
 from typing import Optional, List, Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone
 
 
-class EventResponse(BaseModel):
+class TimestampedResponse(BaseModel):
+    """Base response that serializes naive app datetimes as UTC."""
+
+    @field_serializer("*", when_used="json", check_fields=False)
+    def serialize_datetimes(self, value):
+        if isinstance(value, datetime):
+            if value.tzinfo is None:
+                value = value.replace(tzinfo=timezone.utc)
+            return value.isoformat().replace("+00:00", "Z")
+        return value
+
+
+class EventResponse(TimestampedResponse):
     """Response for event data."""
     id: int
     event_id: str
+    printer_id: str
+    printer_name: str
     created_at: datetime
     updated_at: datetime
     printer_state: str
@@ -24,7 +39,7 @@ class EventResponse(BaseModel):
     snoozed_until: Optional[datetime]
 
 
-class StatusResponse(BaseModel):
+class StatusResponse(TimestampedResponse):
     """Response for current status."""
     app_version: str
     running: bool
@@ -32,25 +47,44 @@ class StatusResponse(BaseModel):
     printer_state: Optional[str]
     printer_printing: bool
     last_capture_time: Optional[datetime]
+    last_capture_image_url: Optional[str]
     last_analysis_time: Optional[datetime]
     active_event: Optional[EventResponse]
     health_status: str
+
+
+class PrinterStatusResponse(TimestampedResponse):
+    """Summary status for one configured printer."""
+    printer_id: str
+    printer_name: str
+    camera_entity: str
+    printer_state_entity: str
+    running: bool
+    monitoring_enabled: bool
+    printer_state: Optional[str]
+    printer_printing: bool
+    last_capture_time: Optional[datetime]
+    last_capture_image_url: Optional[str]
+    last_analysis_time: Optional[datetime]
+    active_event: Optional[EventResponse]
 
 
 class ConfigResponse(BaseModel):
     """Response for configuration."""
 
     app_base_url: str
+    timezone: str
     home_assistant_url: str
     camera_entity: str
     printer_state_entity: str
+    selected_printer: Dict[str, Any]
     analyzer_provider: str
     analyzer_device: str
-    detection_threshold: float
     frame_interval_seconds: int
     certainty_threshold_notify: float
     certainty_threshold_auto_pause: float
     auto_pause_delay_minutes: int
+    printers: List[Dict[str, Any]]
 
 
 class ActionResponse(BaseModel):

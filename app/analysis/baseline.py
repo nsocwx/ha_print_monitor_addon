@@ -17,6 +17,7 @@ MOTION_THRESHOLD = 2000  # Minimum motion pixels to detect movement
 BRIGHTNESS_SHIFT_THRESHOLD = 15  # Brightness change threshold
 COLOR_SATURATION_ANOMALY = 30  # Detect oversaturated areas
 EDGE_DENSITY_THRESHOLD = 0.15  # High edge density anomaly
+ANOMALY_SCORE_THRESHOLD = 0.5  # Internal baseline trigger threshold
 
 
 class BaselineAnalyzer(ImageAnalyzer):
@@ -31,12 +32,11 @@ class BaselineAnalyzer(ImageAnalyzer):
     This should be replaced with a real model (YOLO, etc.)
     """
 
-    def __init__(self, detection_threshold: float = 0.5):
+    def __init__(self):
         self.initialized = False
         self.frame_history = []
         self.motion_history = []
         self.max_history = 5
-        self.detection_threshold = detection_threshold
 
     def initialize(self) -> bool:
         """Initialize analyzer."""
@@ -142,7 +142,7 @@ class BaselineAnalyzer(ImageAnalyzer):
             scores["layer_shift"] * 0.35
         )
 
-        issue_detected = combined_anomaly_score > self.detection_threshold
+        issue_detected = combined_anomaly_score > ANOMALY_SCORE_THRESHOLD
 
         if issue_detected:
             # Determine issue type and severity

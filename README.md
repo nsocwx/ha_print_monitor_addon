@@ -116,6 +116,11 @@ monitoring:
 
 model:
   provider: "baseline"
+  model_path: null
+  options_path: null
+  prototypes_path: null
+  auto_download: true
+  models_dir: "/data/models/printguard"
   device: "cpu"
 
 security:
@@ -219,9 +224,27 @@ Or use the app's built-in notifications which send directly to Home Assistant no
 
 ### model
 
-- `provider`: `baseline` | `yolo` | `onnx` | etc.
-- `model_path`: Path to model file (if applicable)
+- `provider`: `baseline` | `onnx` | `yolo` | etc.
+- `model_path`: Path to model file. If `provider` is `onnx` and this is empty, the app downloads PrintGuard `model.onnx` from Hugging Face.
+- `options_path`: Optional path to PrintGuard `opt.json`
+- `prototypes_path`: Optional path to PrintGuard `prototypes.pkl`
+- `auto_download`: Download missing PrintGuard ONNX artifacts automatically when using `provider: "onnx"`
+- `models_dir`: Directory where downloaded PrintGuard artifacts are stored
 - `device`: `cpu` | `cuda` | etc.
+
+### PrintGuard ONNX
+
+To use the PrintGuard model from Hugging Face, set:
+
+```yaml
+model:
+  provider: "onnx"
+  auto_download: true
+  models_dir: "/data/models/printguard"
+  device: "cpu"
+```
+
+On startup, the app downloads `model.onnx`, `opt.json`, and `prototypes.pkl` from `oliverbravery/PrintGuard` if they are not already present. You can also mount the files manually and set `model_path`, `options_path`, and `prototypes_path` explicitly.
 
 ## Adding a Real ML Model
 

@@ -42,6 +42,25 @@
             margin-bottom: 2rem;
         }
 
+        .printer-tabs {
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+            margin-bottom: 1rem;
+        }
+
+        .tab-button {
+            background: #21262d;
+            color: #c9d1d9;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .tab-button.active {
+            background: #238636;
+            color: #ffffff;
+            border-color: #2ea043;
+        }
+
         .card {
             background: #161b22;
             border: 1px solid rgba(255,255,255,0.08);
@@ -54,6 +73,18 @@
             font-size: 1.2rem;
             margin-bottom: 1rem;
             color: #58a6ff;
+        }
+
+        .card-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            margin-bottom: 1rem;
+        }
+
+        .card-header h2 {
+            margin-bottom: 0;
         }
 
         .status-badge {
@@ -183,6 +214,31 @@
             border-radius: 4px;
         }
 
+        .snapshot-image {
+            display: block;
+            width: 100%;
+            aspect-ratio: 16 / 9;
+            object-fit: contain;
+            background: #0d1117;
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 8px;
+            margin-top: 0.75rem;
+        }
+
+        .snapshot-empty {
+            display: grid;
+            place-items: center;
+            width: 100%;
+            aspect-ratio: 16 / 9;
+            background: #0d1117;
+            border: 1px dashed rgba(255,255,255,0.14);
+            border-radius: 8px;
+            color: #8b949e;
+            text-align: center;
+            padding: 1rem;
+            margin-top: 0.75rem;
+        }
+
         .loading {
             text-align: center;
             padding: 2rem;
@@ -263,6 +319,8 @@
     </div>
 
     <div class="container">
+        <div id="printer-tabs" class="printer-tabs"></div>
+
         <div class="grid">
             <div class="card">
                 <h2>Status</h2>
@@ -290,10 +348,20 @@
                     <p style="color: #999;">No active issues</p>
                 </div>
             </div>
+
+            <div class="card">
+                <h2>Latest Snapshot</h2>
+                <div id="snapshot-content">
+                    <div class="snapshot-empty">No camera capture yet</div>
+                </div>
+            </div>
         </div>
 
         <div class="card">
-            <h2>Recent Events</h2>
+            <div class="card-header">
+                <h2>Recent Events</h2>
+                <button class="btn-secondary" onclick="clearRecentEvents()">Clear</button>
+            </div>
             <div id="events-content">
                 <div class="loading">
                     <div class="spinner"></div>
@@ -315,10 +383,96 @@
 
     <script>
         const API_BASE = window.location.origin;
+        let printers = [];
+        let activePrinterId = null;
+        let configuredTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+        function printerQuery() {
+            return activePrinterId ? `?printer_id=${encodeURIComponent(activePrinterId)}` : '';
+        }
+
+        function eventsQuery(limit = 10) {
+            const params = new URLSearchParams({ limit: String(limit) });
+            if (activePrinterId) {
+                params.set('printer_id', activePrinterId);
+            }
+            return params.toString();
+        }
+
+        function formatDateTime(value) {
+            if (!value) {
+                return 'Unknown';
+            }
+
+            const date = new Date(value);
+            if (Number.isNaN(date.getTime())) {
+                return value;
+            }
+
+            try {
+                return new Intl.DateTimeFormat(undefined, {
+                    dateStyle: 'short',
+                    timeStyle: 'medium',
+                    timeZone: configuredTimeZone,
+                }).format(date);
+            } catch (e) {
+                return date.toLocaleString();
+            }
+        }
+
+        async function loadPrinters() {
+            try {
+                const resp = await fetch(`${API_BASE}/api/printers`);
+                printers = await resp.json();
+                if (!activePrinterId && printers.length > 0) {
+                    activePrinterId = printers[0].printer_id;
+                }
+
+                const tabs = document.getElementById('printer-tabs');
+                if (printers.length <= 1) {
+                    tabs.innerHTML = '';
+                    return;
+                }
+
+                tabs.innerHTML = printers.map((printer) => `
+                    <button
+                        class="tab-button ${printer.printer_id === activePrinterId ? 'active' : ''}"
+                        onclick="selectPrinter('${printer.printer_id}')"
+                    >
+                        ${printer.printer_name}
+                    </button>
+                `).join('');
+            } catch (e) {
+                document.getElementById('printer-tabs').innerHTML = '';
+            }
+        }
+
+        function selectPrinter(printerId) {
+            activePrinterId = printerId;
+            renderTabs();
+            refreshPrinterViews();
+            loadConfig();
+        }
+
+        function renderTabs() {
+            const tabs = document.getElementById('printer-tabs');
+            if (printers.length <= 1) {
+                tabs.innerHTML = '';
+                return;
+            }
+            tabs.innerHTML = printers.map((printer) => `
+                <button
+                    class="tab-button ${printer.printer_id === activePrinterId ? 'active' : ''}"
+                    onclick="selectPrinter('${printer.printer_id}')"
+                >
+                    ${printer.printer_name}
+                </button>
+            `).join('');
+        }
 
         async function loadStatus() {
             try {
-                const resp = await fetch(`${API_BASE}/api/status`);
+                const resp = await fetch(`${API_BASE}/api/status${printerQuery()}`);
                 const data = await resp.json();
 
                 let html = `
@@ -344,7 +498,7 @@
                     html += `
                         <div class="status-item">
                             <label>Last Capture</label>
-                            <value>${new Date(data.last_capture_time).toLocaleString()}</value>
+                            <value>${formatDateTime(data.last_capture_time)}</value>
                         </div>
                     `;
                 }
@@ -397,9 +551,35 @@
             }
         }
 
+        async function loadSnapshot() {
+            try {
+                const resp = await fetch(`${API_BASE}/api/status${printerQuery()}`);
+                const data = await resp.json();
+                const container = document.getElementById('snapshot-content');
+
+                if (!data.last_capture_image_url) {
+                    container.innerHTML = '<div class="snapshot-empty">No camera capture yet</div>';
+                    return;
+                }
+
+                const timestamp = formatDateTime(data.last_capture_time);
+                const imageUrl = `${API_BASE}${data.last_capture_image_url}?t=${Date.now()}`;
+
+                container.innerHTML = `
+                    <div class="status-item">
+                        <label>Captured</label>
+                        <value>${timestamp}</value>
+                    </div>
+                    <img src="${imageUrl}" alt="Latest camera snapshot" class="snapshot-image" />
+                `;
+            } catch (e) {
+                document.getElementById('snapshot-content').innerHTML = `<p style="color: red;">Failed to load snapshot</p>`;
+            }
+        }
+
         async function loadEvents() {
             try {
-                const resp = await fetch(`${API_BASE}/api/events?limit=10`);
+                const resp = await fetch(`${API_BASE}/api/events?${eventsQuery(10)}`);
                 const events = await resp.json();
 
                 if (events.length === 0) {
@@ -409,10 +589,9 @@
 
                 let html = '<div class="events-list">';
                 for (const event of events) {
-                    const created = new Date(event.created_at);
                     html += `
                         <div class="event-item ${event.status}">
-                            <div class="event-time">${created.toLocaleString()}</div>
+                            <div class="event-time">${formatDateTime(event.created_at)}</div>
                             <div class="event-type">
                                 ${event.issue_type ? event.issue_type.replace(/_/g, ' ').toUpperCase() : 'Unknown'}
                                 <span class="event-certainty">${(event.certainty * 100).toFixed(0)}%</span>
@@ -436,7 +615,7 @@
 
         async function loadActiveIssue() {
             try {
-                const resp = await fetch(`${API_BASE}/api/status`);
+                const resp = await fetch(`${API_BASE}/api/status${printerQuery()}`);
                 const data = await resp.json();
                 const event = data.active_event;
 
@@ -451,7 +630,7 @@
 
                 let html = `
                     <div class="event-card ${event.severity}">
-                        <div class="event-time">${new Date(event.created_at).toLocaleString()}</div>
+                        <div class="event-time">${formatDateTime(event.created_at)}</div>
                         <div class="event-type">${event.issue_type ? event.issue_type.replace(/_/g, ' ').toUpperCase() : 'Unknown'}</div>
                         <div class="status-item" style="margin-top: 0.75rem;">
                             <label>Severity</label>
@@ -490,10 +669,37 @@
             }
         }
 
+        async function clearRecentEvents() {
+            if (!confirm('Clear recent events for this printer?')) {
+                return;
+            }
+
+            try {
+                const params = new URLSearchParams();
+                if (activePrinterId) {
+                    params.set('printer_id', activePrinterId);
+                }
+                const suffix = params.toString() ? `?${params.toString()}` : '';
+                const resp = await fetch(`${API_BASE}/api/events/clear${suffix}`, {
+                    method: 'POST',
+                });
+                if (!resp.ok) {
+                    throw new Error('Failed to clear events');
+                }
+                await loadEvents();
+                await loadActiveIssue();
+            } catch (e) {
+                alert('Failed to clear recent events');
+            }
+        }
+
         async function loadConfig() {
             try {
-                const resp = await fetch(`${API_BASE}/api/config`);
+                const resp = await fetch(`${API_BASE}/api/config${printerQuery()}`);
                 const data = await resp.json();
+                configuredTimeZone = data.timezone || configuredTimeZone;
+                const printer = data.selected_printer || {};
+                const pauseService = printer.pause_service || {};
 
                 const html = `
                     <div class="status-item">
@@ -501,16 +707,28 @@
                         <value>${data.app_base_url}</value>
                     </div>
                     <div class="status-item">
+                        <label>Timezone</label>
+                        <value>${data.timezone}</value>
+                    </div>
+                    <div class="status-item">
                         <label>Home Assistant URL</label>
                         <value>${data.home_assistant_url}</value>
                     </div>
                     <div class="status-item">
+                        <label>Selected Printer</label>
+                        <value>${printer.name || 'Unknown'}</value>
+                    </div>
+                    <div class="status-item">
                         <label>Camera Entity</label>
-                        <value>${data.camera_entity}</value>
+                        <value>${printer.camera_entity || data.camera_entity}</value>
                     </div>
                     <div class="status-item">
                         <label>Printer State Entity</label>
-                        <value>${data.printer_state_entity}</value>
+                        <value>${printer.printer_state_entity || data.printer_state_entity}</value>
+                    </div>
+                    <div class="status-item">
+                        <label>Pause Target</label>
+                        <value>${pauseService.target || 'Not configured'}</value>
                     </div>
                     <div class="status-item">
                         <label>Analyzer Provider</label>
@@ -519,10 +737,6 @@
                     <div class="status-item">
                         <label>Analyzer Device</label>
                         <value>${data.analyzer_device}</value>
-                    </div>
-                    <div class="status-item">
-                        <label>Detection Threshold</label>
-                        <value>${(data.detection_threshold * 100).toFixed(1)}%</value>
                     </div>
                     <div class="status-item">
                         <label>Frame Interval</label>
@@ -549,11 +763,17 @@
         }
 
         // Load data on page load and refresh every 5 seconds
-        function refreshAll() {
+        function refreshPrinterViews() {
             loadStatus();
-            loadHealth();
+            loadSnapshot();
             loadActiveIssue();
             loadEvents();
+        }
+
+        async function refreshAll() {
+            await loadPrinters();
+            loadHealth();
+            refreshPrinterViews();
             loadConfig();
         }
 

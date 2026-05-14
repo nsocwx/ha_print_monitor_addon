@@ -3,6 +3,7 @@ import logging
 from typing import Optional
 from .base import ImageAnalyzer
 from .baseline import BaselineAnalyzer
+from .onnx_analyzer import ONNXAnalyzer
 
 logger = logging.getLogger(__name__)
 
@@ -15,7 +16,10 @@ class AnalyzerFactory:
         provider: str,
         model_path: Optional[str] = None,
         device: str = "cpu",
-        detection_threshold: float = 0.5,
+        options_path: Optional[str] = None,
+        prototypes_path: Optional[str] = None,
+        auto_download: bool = True,
+        models_dir: str = "/data/models/printguard",
     ) -> ImageAnalyzer:
         """Create an analyzer instance.
 
@@ -32,12 +36,21 @@ class AnalyzerFactory:
         """
         if provider == "baseline":
             logger.info("Creating BaselineAnalyzer")
-            return BaselineAnalyzer(detection_threshold=detection_threshold)
+            return BaselineAnalyzer()
+
+        if provider == "onnx":
+            logger.info("Creating ONNXAnalyzer")
+            return ONNXAnalyzer(
+                model_path=model_path,
+                device=device,
+                options_path=options_path,
+                prototypes_path=prototypes_path,
+                auto_download=auto_download,
+                models_dir=models_dir,
+            )
 
         # Future providers would go here
         # elif provider == "yolo":
         #     return YOLOAnalyzer(model_path, device)
-        # elif provider == "onnx":
-        #     return ONNXAnalyzer(model_path, device)
 
         raise ValueError(f"Unsupported analyzer provider: {provider}")
