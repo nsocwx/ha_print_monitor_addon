@@ -42,6 +42,8 @@ class EventResponse(TimestampedResponse):
 class StatusResponse(TimestampedResponse):
     """Response for current status."""
     app_version: str
+    printer_id: str
+    printer_name: str
     running: bool
     monitoring_enabled: bool
     printer_state: Optional[str]
@@ -49,6 +51,7 @@ class StatusResponse(TimestampedResponse):
     last_capture_time: Optional[datetime]
     last_capture_image_url: Optional[str]
     last_analysis_time: Optional[datetime]
+    latest_analysis_result: Optional[Dict[str, Any]]
     active_event: Optional[EventResponse]
     health_status: str
 
@@ -66,6 +69,7 @@ class PrinterStatusResponse(TimestampedResponse):
     last_capture_time: Optional[datetime]
     last_capture_image_url: Optional[str]
     last_analysis_time: Optional[datetime]
+    latest_analysis_result: Optional[Dict[str, Any]]
     active_event: Optional[EventResponse]
 
 

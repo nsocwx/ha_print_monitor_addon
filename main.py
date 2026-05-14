@@ -228,6 +228,7 @@ def _printer_status_response(
             else None
         ),
         last_analysis_time=service.last_analysis_time,
+        latest_analysis_result=service.last_analysis_result,
         active_event=_active_event_response(service, session),
     )
 
@@ -252,6 +253,8 @@ async def get_status(
 
     return StatusResponse(
         app_version="0.1.0",
+        printer_id=service.printer_id,
+        printer_name=service.printer_name,
         running=printer_status.running,
         monitoring_enabled=config.monitoring.enabled,
         printer_state=printer_status.printer_state,
@@ -259,6 +262,7 @@ async def get_status(
         last_capture_time=printer_status.last_capture_time,
         last_capture_image_url=printer_status.last_capture_image_url,
         last_analysis_time=printer_status.last_analysis_time,
+        latest_analysis_result=printer_status.latest_analysis_result,
         active_event=printer_status.active_event,
         health_status="healthy",
     )

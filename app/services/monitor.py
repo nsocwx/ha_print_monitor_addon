@@ -43,8 +43,11 @@ class PrintMonitorService:
         self.last_capture_time: Optional[datetime] = None
         self.last_capture_path: Optional[Path] = None
         self.last_analysis_time: Optional[datetime] = None
+        self.last_analysis_result: Optional[dict] = None
         self.printer_state: Optional[str] = None
         self.active_event_id: Optional[str] = None
+        self.pending_detection_count = 0
+        self.pending_issue_type: Optional[str] = None
 
         CAPTURES_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -112,15 +115,46 @@ class PrintMonitorService:
 
             result = await self.analyzer.analyze_frame(image_data, context)
             self.last_analysis_time = datetime.utcnow()
+            self.last_analysis_result = result.to_dict()
 
             logger.debug(f"Analysis result: {result.to_dict()}")
 
             # Handle result
             if result.issue_detected:
-                await self._handle_detection(result, capture_id, capture_path, current_state)
+                if self._confirm_detection(result):
+                    await self._handle_detection(result, capture_id, capture_path, current_state)
+                else:
+                    logger.info(
+                        f"Pending detection for {self.printer_name}: "
+                        f"{self.pending_detection_count}/"
+                        f"{self.config.monitoring.confirmation_frames} "
+                        f"frames confirmed"
+                    )
+            else:
+                self._reset_detection_confirmation()
 
         except Exception as e:
             logger.error(f"Error in monitoring cycle: {e}")
+
+    def _confirm_detection(self, result) -> bool:
+        """Track consecutive matching detections before acting."""
+        required_frames = max(1, self.config.monitoring.confirmation_frames)
+        issue_type = result.issue_type or "unknown"
+
+        if self.pending_issue_type == issue_type:
+            self.pending_detection_count += 1
+        else:
+            self.pending_issue_type = issue_type
+            self.pending_detection_count = 1
+
+        return self.pending_detection_count >= required_frames
+
+    def _reset_detection_confirmation(self):
+        """Reset pending detection confirmation state."""
+        if self.pending_detection_count:
+            logger.info(f"Detection confirmation reset for {self.printer_name}")
+        self.pending_detection_count = 0
+        self.pending_issue_type = None
 
     async def _handle_detection(
         self,

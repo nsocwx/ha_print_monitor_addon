@@ -6,386 +6,347 @@
     <title>HA Print Monitor Dashboard</title>
     <style>
         * {
+            box-sizing: border-box;
             margin: 0;
             padding: 0;
-            box-sizing: border-box;
         }
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
             background: #0d1117;
             color: #c9d1d9;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
         }
 
         .header {
-            background: linear-gradient(135deg, #0f4c81 0%, #191d2b 100%);
-            color: #eff1f6;
-            padding: 2rem;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+            background: #111827;
+            border-bottom: 1px solid rgba(255,255,255,0.08);
+            padding: 1.5rem 2rem;
         }
 
         .header h1 {
-            font-size: 2rem;
-            margin-bottom: 0.5rem;
+            color: #eff6ff;
+            font-size: 1.75rem;
+            margin-bottom: 0.25rem;
+        }
+
+        .header p {
+            color: #8b949e;
         }
 
         .container {
-            max-width: 1200px;
-            margin: 2rem auto;
+            max-width: 1280px;
+            margin: 1.5rem auto;
             padding: 0 1rem;
-        }
-
-        .grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 1.5rem;
-            margin-bottom: 2rem;
         }
 
         .printer-tabs {
             display: flex;
-            gap: 0.5rem;
             flex-wrap: wrap;
+            gap: 0.5rem;
             margin-bottom: 1rem;
+        }
+
+        button {
+            border: 0;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            font-weight: 600;
+            padding: 0.55rem 0.8rem;
+        }
+
+        button:disabled {
+            cursor: not-allowed;
+            opacity: 0.5;
         }
 
         .tab-button {
             background: #21262d;
-            color: #c9d1d9;
             border: 1px solid rgba(255,255,255,0.1);
+            color: #c9d1d9;
         }
 
         .tab-button.active {
             background: #238636;
-            color: #ffffff;
             border-color: #2ea043;
+            color: #fff;
+        }
+
+        .btn-primary { background: #2563eb; color: #fff; }
+        .btn-danger { background: #dc2626; color: #fff; }
+        .btn-warning { background: #f59e0b; color: #111827; }
+        .btn-secondary { background: #374151; color: #fff; }
+
+        .banner {
+            align-items: center;
+            background: #161b22;
+            border: 1px solid rgba(255,255,255,0.08);
+            border-left: 4px solid #58a6ff;
+            border-radius: 8px;
+            display: grid;
+            gap: 1rem;
+            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            margin-bottom: 1rem;
+            padding: 1rem;
+        }
+
+        .banner-item label,
+        .status-item label {
+            color: #8b949e;
+            display: block;
+            font-size: 0.8rem;
+            font-weight: 700;
+            margin-bottom: 0.25rem;
+            text-transform: uppercase;
+        }
+
+        .banner-item strong,
+        .value {
+            color: #e5edf6;
+            display: block;
+            font-size: 0.95rem;
+            overflow-wrap: anywhere;
+        }
+
+        .grid {
+            display: grid;
+            gap: 1rem;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            margin-bottom: 1rem;
         }
 
         .card {
             background: #161b22;
             border: 1px solid rgba(255,255,255,0.08);
-            border-radius: 12px;
-            padding: 1.5rem;
-            box-shadow: 0 1px 4px rgba(0,0,0,0.4);
+            border-radius: 8px;
+            padding: 1rem;
         }
 
         .card h2 {
-            font-size: 1.2rem;
-            margin-bottom: 1rem;
             color: #58a6ff;
+            font-size: 1.05rem;
+            margin-bottom: 0.8rem;
         }
 
         .card-header {
-            display: flex;
             align-items: center;
-            justify-content: space-between;
+            display: flex;
             gap: 1rem;
-            margin-bottom: 1rem;
+            justify-content: space-between;
+            margin-bottom: 0.8rem;
         }
 
         .card-header h2 {
-            margin-bottom: 0;
-        }
-
-        .status-badge {
-            display: inline-block;
-            padding: 0.5rem 1rem;
-            border-radius: 20px;
-            font-size: 0.9rem;
-            font-weight: 500;
-        }
-
-        .status-badge.healthy {
-            background: #1b2a37;
-            color: #5fd5a0;
-        }
-
-        .status-badge.degraded {
-            background: #2f3340;
-            color: #f2c94c;
-        }
-
-        .status-badge.unhealthy {
-            background: #3b1e24;
-            color: #ff7b72;
+            margin: 0;
         }
 
         .status-item {
+            margin-bottom: 0.8rem;
+        }
+
+        .status-badge {
+            border-radius: 999px;
+            display: inline-block;
+            font-weight: 700;
+            padding: 0.35rem 0.7rem;
+        }
+
+        .healthy { background: #123524; color: #5fd5a0; }
+        .degraded { background: #332d16; color: #f2c94c; }
+        .unhealthy { background: #3b1e24; color: #ff7b72; }
+        .muted { color: #8b949e; }
+
+        .severity-critical,
+        .severity-high { color: #ff7b72; }
+        .severity-medium { color: #f2c94c; }
+        .severity-low { color: #7dd3fc; }
+
+        .countdown {
+            background: #3b1e24;
+            border: 1px solid #7f1d1d;
+            border-radius: 8px;
+            color: #fecaca;
+            font-size: 1.1rem;
+            font-weight: 800;
             margin-bottom: 1rem;
+            padding: 1rem;
         }
 
-        .status-item label {
-            display: block;
-            font-weight: 600;
-            margin-bottom: 0.25rem;
-            color: #8b949e;
-        }
-
-        .status-item value {
-            display: block;
-            font-size: 0.95rem;
-            color: #c9d1d9;
-        }
-
-        .event-card {
-            background: #0f1722;
-            border-left: 4px solid #58a6ff;
-            color: #c9d1d9;
-        }
-
-        .event-card.critical {
-            border-left-color: #ef6c7f;
-        }
-
-        .event-card.high {
-            border-left-color: #f85149;
-        }
-
-        .event-card.medium {
-            border-left-color: #f2c94c;
-        }
-
-        .event-card.low {
-            border-left-color: #7dd3fc;
-        }
-
-        .action-buttons {
+        .action-buttons,
+        .optional-actions {
             display: flex;
-            gap: 0.5rem;
-            margin-top: 1rem;
             flex-wrap: wrap;
+            gap: 0.5rem;
+            margin-top: 0.8rem;
         }
 
-        button {
-            padding: 0.5rem 1rem;
-            border: none;
-            border-radius: 4px;
-            font-size: 0.9rem;
-            cursor: pointer;
-            font-weight: 500;
-            transition: all 0.2s;
-        }
-
-        .btn-primary {
-            background: #667eea;
-            color: white;
-        }
-
-        .btn-primary:hover {
-            background: #5568d3;
-        }
-
-        .btn-danger {
-            background: #dc3545;
-            color: white;
-        }
-
-        .btn-danger:hover {
-            background: #c82333;
-        }
-
-        .btn-warning {
-            background: #ffc107;
-            color: #333;
-        }
-
-        .btn-warning:hover {
-            background: #e0a800;
-        }
-
-        .btn-secondary {
-            background: #6c757d;
-            color: white;
-        }
-
-        .btn-secondary:hover {
-            background: #5a6268;
-        }
-
-        button:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
-
-        .capture-image {
-            max-width: 100%;
-            height: auto;
-            margin-top: 1rem;
-            border-radius: 4px;
+        .snapshot-image,
+        .event-thumb {
+            background: #0d1117;
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 6px;
+            object-fit: contain;
         }
 
         .snapshot-image {
+            aspect-ratio: 16 / 9;
             display: block;
             width: 100%;
-            aspect-ratio: 16 / 9;
-            object-fit: contain;
-            background: #0d1117;
-            border: 1px solid rgba(255,255,255,0.08);
-            border-radius: 8px;
-            margin-top: 0.75rem;
         }
 
         .snapshot-empty {
-            display: grid;
-            place-items: center;
-            width: 100%;
+            align-items: center;
             aspect-ratio: 16 / 9;
-            background: #0d1117;
-            border: 1px dashed rgba(255,255,255,0.14);
-            border-radius: 8px;
+            border: 1px dashed rgba(255,255,255,0.16);
+            border-radius: 6px;
             color: #8b949e;
-            text-align: center;
+            display: flex;
+            justify-content: center;
             padding: 1rem;
-            margin-top: 0.75rem;
-        }
-
-        .loading {
             text-align: center;
-            padding: 2rem;
-            color: #666;
-        }
-
-        .spinner {
-            border: 3px solid #f3f3f3;
-            border-top: 3px solid #667eea;
-            border-radius: 50%;
-            width: 40px;
-            height: 40px;
-            animation: spin 1s linear infinite;
-            margin: 0 auto 1rem;
-        }
-
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-
-        .events-list {
-            margin-top: 1rem;
         }
 
         .event-item {
-            padding: 1rem;
-            margin-bottom: 0.5rem;
+            align-items: start;
             background: #111827;
-            border-radius: 8px;
             border-left: 3px solid #58a6ff;
+            border-radius: 6px;
+            display: grid;
+            gap: 0.8rem;
+            grid-template-columns: 96px 1fr;
+            margin-bottom: 0.7rem;
+            padding: 0.8rem;
         }
 
-        .event-item.resolved {
-            opacity: 0.7;
+        .event-thumb {
+            aspect-ratio: 4 / 3;
+            width: 96px;
+        }
+
+        .event-thumb-placeholder {
+            align-items: center;
+            background: #0d1117;
+            border: 1px dashed rgba(255,255,255,0.14);
+            border-radius: 6px;
+            color: #8b949e;
+            display: flex;
+            font-size: 0.75rem;
+            justify-content: center;
+            width: 96px;
+            aspect-ratio: 4 / 3;
         }
 
         .event-time {
-            font-size: 0.85rem;
             color: #8b949e;
+            font-size: 0.82rem;
+            margin-bottom: 0.25rem;
         }
 
         .event-type {
-            font-weight: 600;
-            color: #c9d1d9;
+            color: #e5edf6;
+            font-weight: 800;
         }
 
         .event-certainty {
+            background: #2563eb;
+            border-radius: 4px;
+            color: #fff;
             display: inline-block;
-            margin-left: 0.5rem;
-            padding: 0.25rem 0.5rem;
-            background: #667eea;
-            color: white;
-            border-radius: 3px;
-            font-size: 0.85rem;
-        }
-
-        .progress-bar {
-            width: 100%;
-            height: 6px;
-            background: #ddd;
-            border-radius: 3px;
-            overflow: hidden;
-            margin-top: 0.5rem;
-        }
-
-        .progress-fill {
-            height: 100%;
-            background: linear-gradient(90deg, #667eea, #764ba2);
-            transition: width 0.3s;
+            font-size: 0.78rem;
+            margin-left: 0.4rem;
+            padding: 0.15rem 0.35rem;
         }
     </style>
 </head>
 <body>
     <div class="header">
-        <h1>🖨️ HA Print Monitor</h1>
-        <p>Real-time 3D Print Monitoring with Home Assistant Integration</p>
+        <h1>HA Print Monitor</h1>
+        <p>Real-time 3D print monitoring with Home Assistant</p>
     </div>
 
     <div class="container">
         <div id="printer-tabs" class="printer-tabs"></div>
+        <div id="operator-banner" class="banner"></div>
+        <div id="auto-pause-countdown"></div>
 
         <div class="grid">
             <div class="card">
                 <h2>Status</h2>
-                <div id="status-content">
-                    <div class="loading">
-                        <div class="spinner"></div>
-                        Loading status...
-                    </div>
-                </div>
-            </div>
-
-            <div class="card">
-                <h2>Health</h2>
-                <div id="health-content">
-                    <div class="loading">
-                        <div class="spinner"></div>
-                        Loading health...
-                    </div>
-                </div>
-            </div>
-
-            <div class="card">
-                <h2>Active Issue</h2>
-                <div id="event-content">
-                    <p style="color: #999;">No active issues</p>
-                </div>
+                <div id="status-content"></div>
+                <div class="optional-actions" id="global-optional-action-buttons"></div>
             </div>
 
             <div class="card">
                 <h2>Latest Snapshot</h2>
-                <div id="snapshot-content">
-                    <div class="snapshot-empty">No camera capture yet</div>
-                </div>
+                <div id="snapshot-content"></div>
+            </div>
+
+            <div class="card">
+                <h2>Latest Analysis</h2>
+                <div id="latest-analysis-content"></div>
+            </div>
+
+            <div class="card">
+                <h2>Camera Health</h2>
+                <div id="camera-health-content"></div>
+            </div>
+
+            <div class="card">
+                <h2>Active Issue</h2>
+                <div id="event-content"></div>
+            </div>
+
+            <div class="card">
+                <h2>Health</h2>
+                <div id="health-content"></div>
             </div>
         </div>
 
         <div class="card">
             <div class="card-header">
                 <h2>Recent Events</h2>
-                <button class="btn-secondary" onclick="clearRecentEvents()">Clear</button>
+                <button class="btn-secondary" id="clear-events-button">Clear</button>
             </div>
-            <div id="events-content">
-                <div class="loading">
-                    <div class="spinner"></div>
-                    Loading events...
-                </div>
-            </div>
+            <div id="events-content"></div>
         </div>
 
-        <div class="card">
+        <div class="card" style="margin-top: 1rem;">
             <h2>Configuration</h2>
-            <div id="config-content">
-                <div class="loading">
-                    <div class="spinner"></div>
-                    Loading configuration...
-                </div>
-            </div>
+            <div id="config-content"></div>
         </div>
     </div>
 
     <script>
         const API_BASE = window.location.origin;
+        const SELECTED_PRINTER_KEY = 'haPrintMonitor.selectedPrinterId';
+        const ACTION_TOKEN_KEY = 'haPrintMonitor.actionToken';
         let printers = [];
-        let activePrinterId = null;
+        let activePrinterId = localStorage.getItem(SELECTED_PRINTER_KEY);
         let configuredTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        let refreshInFlight = false;
+        let lastStatus = null;
+        let countdownTimer = null;
+        const optionalEndpointCache = new Map();
+
+        const optionalActions = [
+            { id: 'capture-now-button', label: 'Capture Now', path: '/api/actions/capture-now', method: 'POST' },
+            { id: 'analyze-now-button', label: 'Analyze Now', path: '/api/actions/analyze-now', method: 'POST' },
+            { id: 'test-notification-button', label: 'Send Test Notification', path: '/api/actions/test-notification', method: 'POST' },
+        ];
+
+        function esc(value) {
+            return String(value ?? '').replace(/[&<>"']/g, (char) => ({
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#39;',
+            }[char]));
+        }
+
+        function classToken(value) {
+            return String(value ?? '').toLowerCase().replace(/[^a-z0-9_-]/g, '-');
+        }
 
         function printerQuery() {
             return activePrinterId ? `?printer_id=${encodeURIComponent(activePrinterId)}` : '';
@@ -393,22 +354,20 @@
 
         function eventsQuery(limit = 10) {
             const params = new URLSearchParams({ limit: String(limit) });
-            if (activePrinterId) {
-                params.set('printer_id', activePrinterId);
-            }
+            if (activePrinterId) params.set('printer_id', activePrinterId);
             return params.toString();
         }
 
+        function parseApiDate(value) {
+            if (!value) return null;
+            if (typeof value !== 'string') return new Date(value);
+            const hasExplicitZone = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(value);
+            return new Date(hasExplicitZone ? value : `${value}Z`);
+        }
+
         function formatDateTime(value) {
-            if (!value) {
-                return 'Unknown';
-            }
-
             const date = parseApiDate(value);
-            if (Number.isNaN(date.getTime())) {
-                return value;
-            }
-
+            if (!date || Number.isNaN(date.getTime())) return 'Unknown';
             try {
                 return new Intl.DateTimeFormat(undefined, {
                     dateStyle: 'short',
@@ -420,50 +379,29 @@
             }
         }
 
-        function parseApiDate(value) {
-            if (typeof value !== 'string') {
-                return new Date(value);
-            }
+        function formatDuration(ms) {
+            if (!Number.isFinite(ms)) return 'Unknown';
+            const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+            const minutes = Math.floor(totalSeconds / 60);
+            const seconds = totalSeconds % 60;
+            return `${minutes}m ${String(seconds).padStart(2, '0')}s`;
+        }
 
-            // The backend stores naive datetimes in UTC. If the API returns an
-            // ISO timestamp without an explicit timezone, make that UTC before
-            // formatting in the configured display timezone.
-            const hasExplicitZone = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(value);
-            const normalized = hasExplicitZone ? value : `${value}Z`;
-            return new Date(normalized);
+        function imageUrlFromPath(path) {
+            if (!path) return null;
+            return `${API_BASE}/captures/${encodeURIComponent(path.split(/[\\/]/).pop())}`;
         }
 
         async function loadPrinters() {
-            try {
-                const resp = await fetch(`${API_BASE}/api/printers`);
-                printers = await resp.json();
-                if (!activePrinterId && printers.length > 0) {
-                    activePrinterId = printers[0].printer_id;
-                }
-
-                const tabs = document.getElementById('printer-tabs');
-                if (printers.length <= 1) {
-                    tabs.innerHTML = '';
-                    return;
-                }
-
-                tabs.innerHTML = printers.map((printer) => `
-                    <button
-                        class="tab-button ${printer.printer_id === activePrinterId ? 'active' : ''}"
-                        onclick="selectPrinter('${printer.printer_id}')"
-                    >
-                        ${printer.printer_name}
-                    </button>
-                `).join('');
-            } catch (e) {
-                document.getElementById('printer-tabs').innerHTML = '';
+            const resp = await fetch(`${API_BASE}/api/printers`);
+            printers = await resp.json();
+            if (!printers.some((printer) => printer.printer_id === activePrinterId)) {
+                activePrinterId = printers[0]?.printer_id || null;
             }
-        }
-
-        function selectPrinter(printerId) {
-            activePrinterId = printerId;
+            if (activePrinterId) {
+                localStorage.setItem(SELECTED_PRINTER_KEY, activePrinterId);
+            }
             renderTabs();
-            loadConfig().then(refreshPrinterViews);
         }
 
         function renderTabs() {
@@ -473,324 +411,449 @@
                 return;
             }
             tabs.innerHTML = printers.map((printer) => `
-                <button
-                    class="tab-button ${printer.printer_id === activePrinterId ? 'active' : ''}"
-                    onclick="selectPrinter('${printer.printer_id}')"
-                >
-                    ${printer.printer_name}
+                <button class="tab-button ${printer.printer_id === activePrinterId ? 'active' : ''}" data-printer-id="${esc(printer.printer_id)}">
+                    ${esc(printer.printer_name)}
                 </button>
             `).join('');
+            tabs.querySelectorAll('button[data-printer-id]').forEach((button) => {
+                button.addEventListener('click', () => selectPrinter(button.dataset.printerId));
+            });
         }
 
-        async function loadStatus() {
-            try {
-                const resp = await fetch(`${API_BASE}/api/status${printerQuery()}`);
-                const data = await resp.json();
-
-                let html = `
-                    <div class="status-item">
-                        <label>Monitoring</label>
-                        <span class="status-badge ${data.monitoring_enabled ? 'healthy' : 'unhealthy'}">
-                            ${data.monitoring_enabled ? 'Enabled' : 'Disabled'}
-                        </span>
-                    </div>
-                    <div class="status-item">
-                        <label>Printer State</label>
-                        <value>${data.printer_state || 'Unknown'}</value>
-                    </div>
-                    <div class="status-item">
-                        <label>Printing</label>
-                        <span class="status-badge ${data.printer_printing ? 'healthy' : 'unhealthy'}">
-                            ${data.printer_printing ? 'Yes' : 'No'}
-                        </span>
-                    </div>
-                `;
-
-                if (data.last_capture_time) {
-                    html += `
-                        <div class="status-item">
-                            <label>Last Capture</label>
-                            <value>${formatDateTime(data.last_capture_time)}</value>
-                        </div>
-                    `;
-                }
-
-                document.getElementById('status-content').innerHTML = html;
-            } catch (e) {
-                document.getElementById('status-content').innerHTML = `<p style="color: red;">Failed to load status</p>`;
-            }
+        function selectPrinter(printerId) {
+            activePrinterId = printerId;
+            localStorage.setItem(SELECTED_PRINTER_KEY, printerId);
+            renderTabs();
+            refreshAll(true);
         }
 
-        async function loadHealth() {
-            try {
-                const resp = await fetch(`${API_BASE}/health`);
-                const data = await resp.json();
-
-                const html = `
-                    <div class="status-item">
-                        <label>Overall</label>
-                        <span class="status-badge ${data.status}">
-                            ${data.status.charAt(0).toUpperCase() + data.status.slice(1)}
-                        </span>
-                    </div>
-                    <div class="status-item">
-                        <label>Database</label>
-                        <span class="status-badge ${data.database}">
-                            ${data.database.charAt(0).toUpperCase() + data.database.slice(1)}
-                        </span>
-                    </div>
-                    <div class="status-item">
-                        <label>Home Assistant</label>
-                        <span class="status-badge ${data.home_assistant}">
-                            ${data.home_assistant.charAt(0).toUpperCase() + data.home_assistant.slice(1)}
-                        </span>
-                    </div>
-                    <div class="status-item">
-                        <label>Analyzer</label>
-                        <span class="status-badge ${data.analyzer}">
-                            ${data.analyzer.charAt(0).toUpperCase() + data.analyzer.slice(1)}
-                        </span>
-                    </div>
-                    <div class="status-item">
-                        <label>Uptime</label>
-                        <value>${(data.uptime_seconds / 60).toFixed(1)} minutes</value>
-                    </div>
-                `;
-
-                document.getElementById('health-content').innerHTML = html;
-            } catch (e) {
-                document.getElementById('health-content').innerHTML = `<p style="color: red;">Failed to load health</p>`;
-            }
-        }
-
-        async function loadSnapshot() {
-            try {
-                const resp = await fetch(`${API_BASE}/api/status${printerQuery()}`);
-                const data = await resp.json();
-                const container = document.getElementById('snapshot-content');
-
-                if (!data.last_capture_image_url) {
-                    container.innerHTML = '<div class="snapshot-empty">No camera capture yet</div>';
-                    return;
-                }
-
-                const timestamp = formatDateTime(data.last_capture_time);
-                const imageUrl = `${API_BASE}${data.last_capture_image_url}?t=${Date.now()}`;
-
-                container.innerHTML = `
-                    <div class="status-item">
-                        <label>Captured</label>
-                        <value>${timestamp}</value>
-                    </div>
-                    <img src="${imageUrl}" alt="Latest camera snapshot" class="snapshot-image" />
-                `;
-            } catch (e) {
-                document.getElementById('snapshot-content').innerHTML = `<p style="color: red;">Failed to load snapshot</p>`;
-            }
-        }
-
-        async function loadEvents() {
-            try {
-                const resp = await fetch(`${API_BASE}/api/events?${eventsQuery(10)}`);
-                const events = await resp.json();
-
-                if (events.length === 0) {
-                    document.getElementById('events-content').innerHTML = '<p style="color: #999;">No events yet</p>';
-                    return;
-                }
-
-                let html = '<div class="events-list">';
-                for (const event of events) {
-                    html += `
-                        <div class="event-item ${event.status}">
-                            <div class="event-time">${formatDateTime(event.created_at)}</div>
-                            <div class="event-type">
-                                ${event.issue_type ? event.issue_type.replace(/_/g, ' ').toUpperCase() : 'Unknown'}
-                                <span class="event-certainty">${(event.certainty * 100).toFixed(0)}%</span>
-                            </div>
-                            <div style="margin-top: 0.5rem; font-size: 0.9rem; color: #666;">
-                                ${event.explanation}
-                            </div>
-                            <div style="margin-top: 0.5rem; font-size: 0.85rem; color: #999;">
-                                Status: ${event.status}
-                            </div>
-                        </div>
-                    `;
-                }
-                html += '</div>';
-
-                document.getElementById('events-content').innerHTML = html;
-            } catch (e) {
-                document.getElementById('events-content').innerHTML = `<p style="color: red;">Failed to load events</p>`;
-            }
-        }
-
-        async function loadActiveIssue() {
-            try {
-                const resp = await fetch(`${API_BASE}/api/status${printerQuery()}`);
-                const data = await resp.json();
-                const event = data.active_event;
-
-                if (!event) {
-                    document.getElementById('event-content').innerHTML = '<p style="color: #999;">No active issues</p>';
-                    return;
-                }
-
-                const imageUrl = event.image_path
-                    ? `${API_BASE}/captures/${event.image_path.split('/').pop()}`
-                    : null;
-
-                let html = `
-                    <div class="event-card ${event.severity}">
-                        <div class="event-time">${formatDateTime(event.created_at)}</div>
-                        <div class="event-type">${event.issue_type ? event.issue_type.replace(/_/g, ' ').toUpperCase() : 'Unknown'}</div>
-                        <div class="status-item" style="margin-top: 0.75rem;">
-                            <label>Severity</label>
-                            <value>${event.severity}</value>
-                        </div>
-                        <div class="status-item">
-                            <label>Certainty</label>
-                            <value>${(event.certainty * 100).toFixed(0)}%</value>
-                        </div>
-                        <div class="status-item">
-                            <label>Status</label>
-                            <value>${event.status}</value>
-                        </div>
-                        <div class="status-item">
-                            <label>Recommended Action</label>
-                            <value>${event.recommended_action}</value>
-                        </div>
-                        <div style="margin-top: 1rem; color: #444;">
-                            ${event.explanation}
-                        </div>
-                `;
-
-                if (imageUrl) {
-                    html += `
-                        <img src="${imageUrl}" alt="Event capture" class="capture-image" />
-                    `;
-                }
-
-                html += `
-                    </div>
-                `;
-
-                document.getElementById('event-content').innerHTML = html;
-            } catch (e) {
-                document.getElementById('event-content').innerHTML = `<p style="color: red;">Failed to load active issue</p>`;
-            }
-        }
-
-        async function clearRecentEvents() {
-            if (!confirm('Clear recent events for this printer?')) {
-                return;
-            }
-
-            try {
-                const params = new URLSearchParams();
-                if (activePrinterId) {
-                    params.set('printer_id', activePrinterId);
-                }
-                const suffix = params.toString() ? `?${params.toString()}` : '';
-                const resp = await fetch(`${API_BASE}/api/events/clear${suffix}`, {
-                    method: 'POST',
-                });
-                if (!resp.ok) {
-                    throw new Error('Failed to clear events');
-                }
-                await loadEvents();
-                await loadActiveIssue();
-            } catch (e) {
-                alert('Failed to clear recent events');
-            }
+        async function fetchStatusOnce() {
+            const resp = await fetch(`${API_BASE}/api/status${printerQuery()}`);
+            if (!resp.ok) throw new Error('Failed to load status');
+            lastStatus = await resp.json();
+            return lastStatus;
         }
 
         async function loadConfig() {
-            try {
-                const resp = await fetch(`${API_BASE}/api/config${printerQuery()}`);
-                const data = await resp.json();
-                configuredTimeZone = data.timezone || configuredTimeZone;
-                const printer = data.selected_printer || {};
-                const pauseService = printer.pause_service || {};
+            const resp = await fetch(`${API_BASE}/api/config${printerQuery()}`);
+            if (!resp.ok) throw new Error('Failed to load config');
+            const data = await resp.json();
+            configuredTimeZone = data.timezone || configuredTimeZone;
+            renderConfig(data);
+            return data;
+        }
 
-                const html = `
-                    <div class="status-item">
-                        <label>App Base URL</label>
-                        <value>${data.app_base_url}</value>
+        async function loadHealth() {
+            const resp = await fetch(`${API_BASE}/health`);
+            if (!resp.ok) throw new Error('Failed to load health');
+            renderHealth(await resp.json());
+        }
+
+        async function loadEvents() {
+            const resp = await fetch(`${API_BASE}/api/events?${eventsQuery(10)}`);
+            if (!resp.ok) throw new Error('Failed to load events');
+            renderEvents(await resp.json());
+        }
+
+        function renderAllFromStatus(status) {
+            renderBanner(status);
+            renderStatus(status);
+            renderSnapshot(status);
+            renderLatestAnalysis(status);
+            renderCameraHealth(status);
+            renderActiveIssue(status);
+            renderCountdown(status.active_event);
+        }
+
+        function renderBanner(status) {
+            const latest = status.latest_analysis_result;
+            const latestText = latest
+                ? `${latest.issue_detected ? 'Issue' : 'Clear'} (${Math.round((latest.certainty || 0) * 100)}%)`
+                : 'No analysis yet';
+            const severity = status.active_event?.severity || 'None';
+            document.getElementById('operator-banner').innerHTML = `
+                <div class="banner-item">
+                    <label>Printer</label>
+                    <strong>${esc(status.printer_name || activePrinterId || 'Unknown')}</strong>
+                </div>
+                <div class="banner-item">
+                    <label>Print State</label>
+                    <strong>${esc(status.printer_state || 'Unknown')}</strong>
+                </div>
+                <div class="banner-item">
+                    <label>Monitoring</label>
+                    <strong>${status.monitoring_enabled ? 'Enabled' : 'Disabled'}</strong>
+                </div>
+                <div class="banner-item">
+                    <label>Latest Analysis</label>
+                    <strong>${esc(latestText)}</strong>
+                </div>
+                <div class="banner-item">
+                    <label>Active Severity</label>
+                    <strong class="severity-${classToken(severity)}">${esc(severity)}</strong>
+                </div>
+            `;
+        }
+
+        function renderStatus(status) {
+            document.getElementById('status-content').innerHTML = `
+                <div class="status-item">
+                    <label>Monitoring</label>
+                    <span class="status-badge ${status.monitoring_enabled ? 'healthy' : 'unhealthy'}">${status.monitoring_enabled ? 'Enabled' : 'Disabled'}</span>
+                </div>
+                <div class="status-item">
+                    <label>Printer State</label>
+                    <span class="value">${esc(status.printer_state || 'Unknown')}</span>
+                </div>
+                <div class="status-item">
+                    <label>Printing</label>
+                    <span class="status-badge ${status.printer_printing ? 'healthy' : 'unhealthy'}">${status.printer_printing ? 'Yes' : 'No'}</span>
+                </div>
+                <div class="status-item">
+                    <label>Last Capture</label>
+                    <span class="value">${esc(formatDateTime(status.last_capture_time))}</span>
+                </div>
+            `;
+            renderGlobalOptionalActionButtons();
+        }
+
+        function renderSnapshot(status) {
+            const container = document.getElementById('snapshot-content');
+            if (!status.last_capture_image_url) {
+                container.innerHTML = '<div class="snapshot-empty">No camera capture yet</div>';
+                return;
+            }
+            const url = `${API_BASE}${status.last_capture_image_url}?t=${Date.now()}`;
+            container.innerHTML = `
+                <div class="status-item">
+                    <label>Captured</label>
+                    <span class="value">${esc(formatDateTime(status.last_capture_time))}</span>
+                </div>
+                <img src="${esc(url)}" alt="Latest camera snapshot" class="snapshot-image">
+            `;
+        }
+
+        function renderLatestAnalysis(status) {
+            const result = status.latest_analysis_result;
+            if (!result) {
+                document.getElementById('latest-analysis-content').innerHTML = '<p class="muted">No analysis has run yet.</p>';
+                return;
+            }
+            document.getElementById('latest-analysis-content').innerHTML = `
+                <div class="status-item">
+                    <label>Result</label>
+                    <span class="value">${result.issue_detected ? 'Issue detected' : 'No issue detected'}</span>
+                </div>
+                <div class="status-item">
+                    <label>Issue Type</label>
+                    <span class="value">${esc(result.issue_type || 'None')}</span>
+                </div>
+                <div class="status-item">
+                    <label>Certainty</label>
+                    <span class="value">${Math.round((result.certainty || 0) * 100)}%</span>
+                </div>
+                <div class="status-item">
+                    <label>Explanation</label>
+                    <span class="value">${esc(result.explanation || 'No explanation')}</span>
+                </div>
+                <div class="status-item">
+                    <label>Analyzed</label>
+                    <span class="value">${esc(formatDateTime(status.last_analysis_time || result.timestamp))}</span>
+                </div>
+            `;
+        }
+
+        function renderCameraHealth(status) {
+            const captureDate = parseApiDate(status.last_capture_time);
+            const ageMs = captureDate ? Date.now() - captureDate.getTime() : NaN;
+            const staleMs = 2 * 60 * 1000;
+            const stale = Number.isFinite(ageMs) && ageMs > staleMs;
+            const stateClass = !status.last_capture_time ? 'unhealthy' : stale ? 'degraded' : 'healthy';
+            const stateText = !status.last_capture_time ? 'No capture' : stale ? 'Stale frame' : 'Recent frame';
+            document.getElementById('camera-health-content').innerHTML = `
+                <div class="status-item">
+                    <label>Capture Status</label>
+                    <span class="status-badge ${stateClass}">${esc(stateText)}</span>
+                </div>
+                <div class="status-item">
+                    <label>Last Capture Age</label>
+                    <span class="value">${status.last_capture_time ? esc(formatDuration(ageMs)) : 'Unknown'}</span>
+                </div>
+                <div class="status-item">
+                    <label>Warning</label>
+                    <span class="value">${stale ? 'Last frame is older than 2 minutes.' : 'None'}</span>
+                </div>
+            `;
+        }
+
+        function renderActiveIssue(status) {
+            const event = status.active_event;
+            if (!event) {
+                document.getElementById('event-content').innerHTML = '<p class="muted">No active issues</p>';
+                return;
+            }
+            const imageUrl = imageUrlFromPath(event.image_path);
+            document.getElementById('event-content').innerHTML = `
+                <div class="event-card severity-${classToken(event.severity)}">
+                    <div class="event-time">${esc(formatDateTime(event.created_at))}</div>
+                    <div class="event-type">${esc((event.issue_type || 'Unknown').replace(/_/g, ' ').toUpperCase())}</div>
+                    <div class="status-item" style="margin-top: 0.75rem;">
+                        <label>Severity</label>
+                        <span class="value">${esc(event.severity)}</span>
                     </div>
                     <div class="status-item">
-                        <label>Timezone</label>
-                        <value>${data.timezone}</value>
+                        <label>Certainty</label>
+                        <span class="value">${Math.round((event.certainty || 0) * 100)}%</span>
                     </div>
                     <div class="status-item">
-                        <label>Home Assistant URL</label>
-                        <value>${data.home_assistant_url}</value>
+                        <label>Status</label>
+                        <span class="value">${esc(event.status)}</span>
                     </div>
                     <div class="status-item">
-                        <label>Selected Printer</label>
-                        <value>${printer.name || 'Unknown'}</value>
+                        <label>Recommended Action</label>
+                        <span class="value">${esc(event.recommended_action)}</span>
                     </div>
-                    <div class="status-item">
-                        <label>Camera Entity</label>
-                        <value>${printer.camera_entity || data.camera_entity}</value>
+                    <p class="muted">${esc(event.explanation || '')}</p>
+                    ${imageUrl ? `<img src="${esc(imageUrl)}" alt="Event capture" class="snapshot-image" style="margin-top: 0.8rem;">` : ''}
+                    <div class="action-buttons">
+                        <button class="btn-danger" data-action="pause">Pause Now</button>
+                        <button class="btn-primary" data-action="acknowledge">Acknowledge</button>
+                        <button class="btn-warning" data-action="snooze">Snooze 15 Minutes</button>
+                        <button class="btn-secondary" data-action="ignore">Ignore</button>
                     </div>
-                    <div class="status-item">
-                        <label>Printer State Entity</label>
-                        <value>${printer.printer_state_entity || data.printer_state_entity}</value>
-                    </div>
-                    <div class="status-item">
-                        <label>Pause Target</label>
-                        <value>${pauseService.target || 'Not configured'}</value>
-                    </div>
-                    <div class="status-item">
-                        <label>Analyzer Provider</label>
-                        <value>${data.analyzer_provider}</value>
-                    </div>
-                    <div class="status-item">
-                        <label>Analyzer Device</label>
-                        <value>${data.analyzer_device}</value>
-                    </div>
-                    <div class="status-item">
-                        <label>Frame Interval</label>
-                        <value>${data.frame_interval_seconds}s</value>
-                    </div>
-                    <div class="status-item">
-                        <label>Notification Threshold</label>
-                        <value>${(data.certainty_threshold_notify * 100).toFixed(0)}%</value>
-                    </div>
-                    <div class="status-item">
-                        <label>Auto-Pause Threshold</label>
-                        <value>${(data.certainty_threshold_auto_pause * 100).toFixed(0)}%</value>
-                    </div>
-                    <div class="status-item">
-                        <label>Auto-Pause Delay</label>
-                        <value>${data.auto_pause_delay_minutes} minutes</value>
+                    <div class="optional-actions" id="optional-action-buttons"></div>
+                </div>
+            `;
+            document.querySelectorAll('[data-action]').forEach((button) => {
+                button.addEventListener('click', () => runEventAction(button.dataset.action, event.event_id));
+            });
+            renderOptionalActionButtons(event.event_id);
+        }
+
+        function renderCountdown(event) {
+            const container = document.getElementById('auto-pause-countdown');
+            if (countdownTimer) {
+                clearInterval(countdownTimer);
+                countdownTimer = null;
+            }
+            if (!event || !event.auto_pause_deadline) {
+                container.innerHTML = '';
+                return;
+            }
+            const update = () => {
+                const deadline = parseApiDate(event.auto_pause_deadline);
+                const remainingMs = deadline ? deadline.getTime() - Date.now() : NaN;
+                container.innerHTML = `
+                    <div class="countdown">
+                        Auto-pause countdown: ${esc(formatDuration(remainingMs))}
                     </div>
                 `;
+            };
+            update();
+            countdownTimer = setInterval(update, 1000);
+        }
 
-                document.getElementById('config-content').innerHTML = html;
+        function renderEvents(events) {
+            if (!events.length) {
+                document.getElementById('events-content').innerHTML = '<p class="muted">No events yet</p>';
+                return;
+            }
+            document.getElementById('events-content').innerHTML = `
+                <div class="events-list">
+                    ${events.map((event) => {
+                        const imageUrl = imageUrlFromPath(event.image_path);
+                        return `
+                            <div class="event-item">
+                                ${imageUrl
+                                    ? `<img src="${esc(imageUrl)}" alt="Event thumbnail" class="event-thumb">`
+                                    : '<div class="event-thumb-placeholder">No image</div>'}
+                                <div>
+                                    <div class="event-time">${esc(formatDateTime(event.created_at))}</div>
+                                    <div class="event-type">
+                                        ${esc((event.issue_type || 'Unknown').replace(/_/g, ' ').toUpperCase())}
+                                        <span class="event-certainty">${Math.round((event.certainty || 0) * 100)}%</span>
+                                    </div>
+                                    <div class="muted" style="margin-top: 0.4rem;">${esc(event.explanation || '')}</div>
+                                    <div class="muted" style="margin-top: 0.4rem;">Status: ${esc(event.status)}</div>
+                                </div>
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+            `;
+        }
+
+        function renderHealth(data) {
+            document.getElementById('health-content').innerHTML = `
+                <div class="status-item">
+                    <label>Overall</label>
+                    <span class="status-badge ${classToken(data.status)}">${esc(data.status)}</span>
+                </div>
+                <div class="status-item">
+                    <label>Database</label>
+                    <span class="status-badge ${classToken(data.database)}">${esc(data.database)}</span>
+                </div>
+                <div class="status-item">
+                    <label>Home Assistant</label>
+                    <span class="status-badge ${classToken(data.home_assistant)}">${esc(data.home_assistant)}</span>
+                </div>
+                <div class="status-item">
+                    <label>Analyzer</label>
+                    <span class="status-badge ${classToken(data.analyzer)}">${esc(data.analyzer)}</span>
+                </div>
+                <div class="status-item">
+                    <label>Uptime</label>
+                    <span class="value">${Number(data.uptime_seconds / 60).toFixed(1)} minutes</span>
+                </div>
+            `;
+        }
+
+        function renderConfig(data) {
+            const printer = data.selected_printer || {};
+            const pauseService = printer.pause_service || {};
+            document.getElementById('config-content').innerHTML = `
+                <div class="status-item"><label>App Base URL</label><span class="value">${esc(data.app_base_url)}</span></div>
+                <div class="status-item"><label>Timezone</label><span class="value">${esc(data.timezone)}</span></div>
+                <div class="status-item"><label>Home Assistant URL</label><span class="value">${esc(data.home_assistant_url)}</span></div>
+                <div class="status-item"><label>Selected Printer</label><span class="value">${esc(printer.name || 'Unknown')}</span></div>
+                <div class="status-item"><label>Camera Entity</label><span class="value">${esc(printer.camera_entity || data.camera_entity)}</span></div>
+                <div class="status-item"><label>Printer State Entity</label><span class="value">${esc(printer.printer_state_entity || data.printer_state_entity)}</span></div>
+                <div class="status-item"><label>Pause Target</label><span class="value">${esc(pauseService.target || 'Not configured')}</span></div>
+                <div class="status-item"><label>Analyzer Provider</label><span class="value">${esc(data.analyzer_provider)}</span></div>
+                <div class="status-item"><label>Analyzer Device</label><span class="value">${esc(data.analyzer_device)}</span></div>
+                <div class="status-item"><label>Frame Interval</label><span class="value">${Number(data.frame_interval_seconds)}s</span></div>
+                <div class="status-item"><label>Notification Threshold</label><span class="value">${Math.round((data.certainty_threshold_notify || 0) * 100)}%</span></div>
+                <div class="status-item"><label>Auto-Pause Threshold</label><span class="value">${Math.round((data.certainty_threshold_auto_pause || 0) * 100)}%</span></div>
+                <div class="status-item"><label>Auto-Pause Delay</label><span class="value">${Number(data.auto_pause_delay_minutes)} minutes</span></div>
+            `;
+        }
+
+        function getActionToken() {
+            let token = localStorage.getItem(ACTION_TOKEN_KEY);
+            if (!token) {
+                token = prompt('Enter dashboard action token');
+                if (token) localStorage.setItem(ACTION_TOKEN_KEY, token);
+            }
+            return token;
+        }
+
+        async function runEventAction(action, eventId) {
+            const token = getActionToken();
+            if (!token) return;
+            const params = new URLSearchParams({ event_id: eventId, token });
+            let path = `/api/actions/${action}`;
+            if (action === 'snooze') {
+                path = '/api/actions/snooze';
+                params.set('minutes', '15');
+            }
+            const resp = await fetch(`${API_BASE}${path}?${params.toString()}`, { method: 'POST' });
+            if (resp.status === 401) {
+                localStorage.removeItem(ACTION_TOKEN_KEY);
+                alert('Invalid action token.');
+                return;
+            }
+            if (!resp.ok) {
+                alert(`Action failed: ${action}`);
+                return;
+            }
+            await refreshAll(true);
+        }
+
+        async function endpointExists(path) {
+            if (optionalEndpointCache.has(path)) {
+                return optionalEndpointCache.get(path);
+            }
+            try {
+                const resp = await fetch(`${API_BASE}${path}`, { method: 'OPTIONS' });
+                const exists = resp.status !== 404;
+                optionalEndpointCache.set(path, exists);
+                return exists;
             } catch (e) {
-                document.getElementById('config-content').innerHTML = `<p style="color: red;">Failed to load config</p>`;
+                optionalEndpointCache.set(path, false);
+                return false;
             }
         }
 
-        // Load data on page load and refresh every 5 seconds
-        function refreshPrinterViews() {
-            loadStatus();
-            loadSnapshot();
-            loadActiveIssue();
-            loadEvents();
+        async function renderGlobalOptionalActionButtons() {
+            const container = document.getElementById('global-optional-action-buttons');
+            if (!container) return;
+            const available = [];
+            for (const action of optionalActions) {
+                if (await endpointExists(action.path)) available.push(action);
+            }
+            if (!available.length) {
+                container.innerHTML = '';
+                return;
+            }
+            container.innerHTML = available.map((action) => `
+                <button class="btn-secondary" data-optional-path="${esc(action.path)}">${esc(action.label)}</button>
+            `).join('');
+            container.querySelectorAll('[data-optional-path]').forEach((button) => {
+                button.addEventListener('click', () => runOptionalAction(button.dataset.optionalPath, lastStatus?.active_event?.event_id));
+            });
         }
 
-        async function refreshAll() {
-            await loadPrinters();
-            loadHealth();
-            await loadConfig();
-            refreshPrinterViews();
+        async function renderOptionalActionButtons(eventId) {
+            const container = document.getElementById('optional-action-buttons');
+            if (!container) return;
+            const available = [];
+            for (const action of optionalActions) {
+                if (await endpointExists(action.path)) available.push(action);
+            }
+            if (!available.length) {
+                container.innerHTML = '';
+                return;
+            }
+            container.innerHTML = available.map((action) => `
+                <button class="btn-secondary" data-optional-path="${esc(action.path)}">${esc(action.label)}</button>
+            `).join('');
+            container.querySelectorAll('[data-optional-path]').forEach((button) => {
+                button.addEventListener('click', () => runOptionalAction(button.dataset.optionalPath, eventId));
+            });
         }
 
-        refreshAll();
-        setInterval(refreshAll, 5000);
+        async function runOptionalAction(path, eventId) {
+            const params = new URLSearchParams();
+            if (activePrinterId) params.set('printer_id', activePrinterId);
+            if (eventId) params.set('event_id', eventId);
+            const suffix = params.toString() ? `?${params.toString()}` : '';
+            const resp = await fetch(`${API_BASE}${path}${suffix}`, { method: 'POST' });
+            if (!resp.ok) alert('Optional action failed.');
+            await refreshAll(true);
+        }
+
+        async function clearRecentEvents() {
+            if (!confirm('Clear recent events for this printer?')) return;
+            const params = new URLSearchParams();
+            if (activePrinterId) params.set('printer_id', activePrinterId);
+            const suffix = params.toString() ? `?${params.toString()}` : '';
+            const resp = await fetch(`${API_BASE}/api/events/clear${suffix}`, { method: 'POST' });
+            if (!resp.ok) {
+                alert('Failed to clear recent events');
+                return;
+            }
+            await refreshAll(true);
+        }
+
+        async function refreshAll(force = false) {
+            if (refreshInFlight && !force) return;
+            refreshInFlight = true;
+            try {
+                await loadPrinters();
+                await loadConfig();
+                const status = await fetchStatusOnce();
+                renderAllFromStatus(status);
+                await Promise.all([loadHealth(), loadEvents()]);
+            } catch (e) {
+                console.error(e);
+            } finally {
+                refreshInFlight = false;
+            }
+        }
+
+        document.getElementById('clear-events-button').addEventListener('click', clearRecentEvents);
+        refreshAll(true);
+        setInterval(() => refreshAll(false), 5000);
     </script>
 </body>
 </html>

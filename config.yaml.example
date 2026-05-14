@@ -47,12 +47,32 @@ home_assistant:
 #       data: {}
 
 monitoring:
+  # Master switch for all monitoring cycles. Set false to keep the web UI up
+  # while stopping camera captures and model analysis.
   enabled: true
+
+  # Seconds between monitoring cycles for each configured printer.
+  # Lower values react faster but use more Home Assistant, CPU, and disk I/O.
   frame_interval_seconds: 30
+
+  # Consecutive matching issue frames required before creating/updating an event,
+  # sending notifications, or scheduling auto-pause. A clean frame resets the
+  # counter. Set to 1 to act on every model detection immediately.
   confirmation_frames: 2
+
+  # Minimum model certainty required before sending a Home Assistant notification.
+  # Detections below this value may still be recorded as events.
   certainty_threshold_notify: 0.70
+
+  # Minimum certainty required before scheduling auto-pause. Auto-pause also
+  # requires the analyzer result severity to be high or critical.
   certainty_threshold_auto_pause: 0.85
+
+  # Minutes to wait after a qualifying high/critical detection before the app
+  # calls the configured pause service automatically.
   auto_pause_delay_minutes: 15
+
+  # Minutes used by dashboard/mobile notification snooze actions.
   snooze_minutes: 15
 
 model:
