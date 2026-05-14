@@ -3,7 +3,7 @@ import logging
 from datetime import datetime, timedelta
 from pathlib import Path
 from sqlmodel import Session, select
-from app.models.event import PrinterEvent, CameraCapture, SystemLog
+from app.models.event import AnalysisResult, PrinterEvent, CameraCapture, SystemLog
 from app.core.config import AppConfig
 
 logger = logging.getLogger(__name__)
@@ -46,6 +46,18 @@ async def cleanup_old_data(config: AppConfig, session: Session):
     if deleted_count > 0:
         session.commit()
         logger.info(f"Deleted {deleted_count} old events")
+
+    old_results = session.exec(
+        select(AnalysisResult).where(AnalysisResult.created_at < cutoff_events)
+    ).all()
+    deleted_results = 0
+    for result in old_results:
+        session.delete(result)
+        deleted_results += 1
+
+    if deleted_results > 0:
+        session.commit()
+        logger.info(f"Deleted {deleted_results} old analysis results")
 
     # Cleanup old images
     cutoff_images = now - timedelta(days=retention_config.keep_images_days)

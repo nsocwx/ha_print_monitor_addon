@@ -50,8 +50,10 @@ class MonitoringConfig(BaseSettings):
     frame_interval_seconds: int = 30
     confirmation_frames: int = 2
     certainty_threshold_notify: float = 0.7
+    auto_pause_enabled: bool = True
     certainty_threshold_auto_pause: float = 0.85
     auto_pause_delay_minutes: int = 15
+    cooldown_minutes: int = 10
     snooze_minutes: int = 15
 
 
@@ -250,8 +252,10 @@ def save_config(config: AppConfig) -> None:
             "frame_interval_seconds": config.monitoring.frame_interval_seconds,
             "confirmation_frames": config.monitoring.confirmation_frames,
             "certainty_threshold_notify": config.monitoring.certainty_threshold_notify,
+            "auto_pause_enabled": config.monitoring.auto_pause_enabled,
             "certainty_threshold_auto_pause": config.monitoring.certainty_threshold_auto_pause,
             "auto_pause_delay_minutes": config.monitoring.auto_pause_delay_minutes,
+            "cooldown_minutes": config.monitoring.cooldown_minutes,
             "snooze_minutes": config.monitoring.snooze_minutes,
         },
         "model": {

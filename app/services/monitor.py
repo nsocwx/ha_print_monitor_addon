@@ -2,11 +2,14 @@
 import logging
 import asyncio
 import uuid
+import json
+from io import BytesIO
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
+from PIL import Image, UnidentifiedImageError
 from sqlmodel import Session, select
-from app.models.event import PrinterEvent, CameraCapture
+from app.models.event import AnalysisResult, PrinterEvent, CameraCapture
 from app.core.config import AppConfig, PrinterConfig
 from app.services.home_assistant import HAService
 from app.analysis.factory import AnalyzerFactory
@@ -42,6 +45,8 @@ class PrintMonitorService:
         self.running = False
         self.last_capture_time: Optional[datetime] = None
         self.last_capture_path: Optional[Path] = None
+        self.last_capture_status: str = "no_capture"
+        self.last_capture_error: Optional[str] = None
         self.last_analysis_time: Optional[datetime] = None
         self.last_analysis_result: Optional[dict] = None
         self.printer_state: Optional[str] = None
@@ -93,19 +98,24 @@ class PrintMonitorService:
 
             # Get camera image
             try:
-                image_data = await self.ha_service.get_camera_image(
+                camera_image = await self.ha_service.get_camera_image(
                     self.printer.camera_entity
                 )
-                self.last_capture_time = datetime.utcnow()
+                image_data = self._validate_camera_image(camera_image)
             except Exception as e:
-                logger.error(f"Failed to capture image: {e}")
+                self.last_capture_status = "error"
+                self.last_capture_error = str(e)
+                logger.error(f"Failed to capture image for {self.printer_name}: {e}")
                 return
 
             # Save capture
             capture_id = f"capture_{self.printer_id}_{uuid.uuid4().hex[:8]}"
             capture_path = CAPTURES_DIR / f"{capture_id}.jpg"
             capture_path.write_bytes(image_data)
+            self.last_capture_time = datetime.utcnow()
             self.last_capture_path = capture_path
+            self.last_capture_status = "ok"
+            self.last_capture_error = None
 
             # Analyze frame
             context = AnalysisContext(
@@ -116,6 +126,7 @@ class PrintMonitorService:
             result = await self.analyzer.analyze_frame(image_data, context)
             self.last_analysis_time = datetime.utcnow()
             self.last_analysis_result = result.to_dict()
+            self._store_analysis_result(result, capture_path)
 
             logger.debug(f"Analysis result: {result.to_dict()}")
 
@@ -155,6 +166,53 @@ class PrintMonitorService:
             logger.info(f"Detection confirmation reset for {self.printer_name}")
         self.pending_detection_count = 0
         self.pending_issue_type = None
+
+    def _validate_camera_image(self, camera_image) -> bytes:
+        """Validate Home Assistant returned a complete decodable image."""
+        content = camera_image.content
+        content_type = camera_image.content_type or "unknown"
+
+        if not content:
+            raise ValueError(
+                f"empty camera response from {self.printer.camera_entity} "
+                f"(content-type: {content_type})"
+            )
+
+        try:
+            with Image.open(BytesIO(content)) as image:
+                image.verify()
+        except (UnidentifiedImageError, OSError, ValueError) as exc:
+            preview = content[:80].decode("utf-8", errors="replace").replace("\n", " ")
+            raise ValueError(
+                f"invalid camera image from {self.printer.camera_entity}: "
+                f"{len(content)} bytes, content-type {content_type}, "
+                f"preview {preview!r}"
+            ) from exc
+
+        return content
+
+    def _store_analysis_result(self, result, capture_path: Path):
+        """Persist one analyzer result for dashboard history."""
+        session = SessionLocal()
+        try:
+            analysis = AnalysisResult(
+                printer_id=self.printer_id,
+                printer_name=self.printer_name,
+                result="issue" if result.issue_detected else "clear",
+                issue_type=result.issue_type,
+                certainty=result.certainty,
+                severity=result.severity.value,
+                explanation=result.explanation,
+                image_path=str(capture_path),
+                annotated_image_path=result.annotated_image_path,
+                raw_model_output_json=json.dumps(result.raw_model_output, default=str),
+            )
+            session.add(analysis)
+            session.commit()
+        except Exception as e:
+            logger.warning(f"Failed to store analysis result: {e}")
+        finally:
+            session.close()
 
     async def _handle_detection(
         self,
@@ -222,6 +280,8 @@ class PrintMonitorService:
 
             # Set up auto-pause if needed
             if (
+                self.config.monitoring.auto_pause_enabled
+                and
                 result.certainty >= self.config.monitoring.certainty_threshold_auto_pause
                 and result.severity in (Severity.HIGH, Severity.CRITICAL)
             ):
@@ -268,6 +328,7 @@ class PrintMonitorService:
         """Check if auto-pause should be triggered."""
         if (
             event.auto_pause_deadline
+            and self.config.monitoring.auto_pause_enabled
             and datetime.utcnow() >= event.auto_pause_deadline
             and not event.auto_paused
             and event.status == "active"

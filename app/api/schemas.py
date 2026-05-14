@@ -50,6 +50,8 @@ class StatusResponse(TimestampedResponse):
     printer_printing: bool
     last_capture_time: Optional[datetime]
     last_capture_image_url: Optional[str]
+    last_capture_status: str
+    last_capture_error: Optional[str]
     last_analysis_time: Optional[datetime]
     latest_analysis_result: Optional[Dict[str, Any]]
     active_event: Optional[EventResponse]
@@ -68,9 +70,25 @@ class PrinterStatusResponse(TimestampedResponse):
     printer_printing: bool
     last_capture_time: Optional[datetime]
     last_capture_image_url: Optional[str]
+    last_capture_status: str
+    last_capture_error: Optional[str]
     last_analysis_time: Optional[datetime]
     latest_analysis_result: Optional[Dict[str, Any]]
     active_event: Optional[EventResponse]
+
+
+class AnalysisResultResponse(TimestampedResponse):
+    """Response for one analyzer history row."""
+    id: Optional[int]
+    printer_id: str
+    created_at: datetime
+    result: str
+    issue_type: Optional[str]
+    certainty: float
+    severity: str
+    explanation: str
+    image_url: Optional[str]
+    annotated_image_url: Optional[str]
 
 
 class ConfigResponse(BaseModel):
@@ -85,9 +103,12 @@ class ConfigResponse(BaseModel):
     analyzer_provider: str
     analyzer_device: str
     frame_interval_seconds: int
+    confirmation_frames: int
     certainty_threshold_notify: float
+    auto_pause_enabled: bool
     certainty_threshold_auto_pause: float
     auto_pause_delay_minutes: int
+    cooldown_minutes: int
     printers: List[Dict[str, Any]]
 
 

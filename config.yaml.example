@@ -64,6 +64,10 @@ monitoring:
   # Detections below this value may still be recorded as events.
   certainty_threshold_notify: 0.70
 
+  # Enable automatic pause scheduling for high/critical detections that meet
+  # certainty_threshold_auto_pause. Notifications still work when this is false.
+  auto_pause_enabled: true
+
   # Minimum certainty required before scheduling auto-pause. Auto-pause also
   # requires the analyzer result severity to be high or critical.
   certainty_threshold_auto_pause: 0.85
@@ -71,6 +75,10 @@ monitoring:
   # Minutes to wait after a qualifying high/critical detection before the app
   # calls the configured pause service automatically.
   auto_pause_delay_minutes: 15
+
+  # Cooldown window shown in the dashboard for operator awareness. This is kept
+  # as a protection setting for workflows that suppress repeated action prompts.
+  cooldown_minutes: 10
 
   # Minutes used by dashboard/mobile notification snooze actions.
   snooze_minutes: 15

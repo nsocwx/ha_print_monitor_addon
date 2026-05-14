@@ -1,6 +1,7 @@
 """Home Assistant integration service."""
 import logging
 import httpx
+from dataclasses import dataclass
 from typing import Optional, Dict, Any, List
 from datetime import datetime
 
@@ -10,6 +11,16 @@ logger = logging.getLogger(__name__)
 class HomeAssistantError(Exception):
     """Base exception for Home Assistant errors."""
     pass
+
+
+@dataclass
+class CameraImage:
+    """Camera response bytes plus HTTP metadata."""
+
+    content: bytes
+    content_type: str
+    content_length: int
+    status_code: int
 
 
 class HAService:
@@ -68,14 +79,14 @@ class HAService:
             logger.error(f"Failed to get state for {entity_id}: {e}")
             raise HomeAssistantError(f"Failed to get state: {e}")
 
-    async def get_camera_image(self, entity_id: str) -> bytes:
+    async def get_camera_image(self, entity_id: str) -> CameraImage:
         """Get camera snapshot image from Home Assistant.
 
         Args:
             entity_id: Camera entity ID
 
         Returns:
-            Image bytes
+            CameraImage with image bytes and response metadata
 
         Raises:
             HomeAssistantError: If request fails
@@ -87,7 +98,12 @@ class HAService:
                     headers=self.headers
                 )
                 resp.raise_for_status()
-                return resp.content
+                return CameraImage(
+                    content=resp.content,
+                    content_type=resp.headers.get("content-type", ""),
+                    content_length=len(resp.content),
+                    status_code=resp.status_code,
+                )
         except httpx.HTTPError as e:
             logger.error(f"Failed to get camera image for {entity_id}: {e}")
             raise HomeAssistantError(f"Failed to get camera image: {e}")

@@ -79,6 +79,24 @@ class CameraCapture(SQLModel, table=True):
     event_id: Optional[str] = None  # Link to PrinterEvent if related
 
 
+class AnalysisResult(SQLModel, table=True):
+    """Model for storing recent analyzer results, including clear frames."""
+    __tablename__ = "analysis_results"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    printer_id: str = Field(default="default", index=True)
+    printer_name: str = Field(default="Default Printer")
+    created_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+    result: str
+    issue_type: Optional[str] = None
+    certainty: float = 0.0
+    severity: str = "low"
+    explanation: str = ""
+    image_path: Optional[str] = None
+    annotated_image_path: Optional[str] = None
+    raw_model_output_json: Optional[str] = None
+
+
 class SystemLog(SQLModel, table=True):
     """Model for storing system events and logs."""
     __tablename__ = "system_logs"

@@ -155,6 +155,7 @@
         .degraded { background: #332d16; color: #f2c94c; }
         .unhealthy { background: #3b1e24; color: #ff7b72; }
         .muted { color: #8b949e; }
+        .status-badge.muted { background: #21262d; color: #8b949e; }
 
         .severity-critical,
         .severity-high { color: #ff7b72; }
@@ -256,6 +257,33 @@
             margin-left: 0.4rem;
             padding: 0.15rem 0.35rem;
         }
+
+        .timeline-row {
+            align-items: center;
+            border-bottom: 1px solid rgba(255,255,255,0.06);
+            display: grid;
+            gap: 0.6rem;
+            grid-template-columns: 56px 1fr auto;
+            padding: 0.45rem 0;
+        }
+
+        .timeline-row:last-child {
+            border-bottom: 0;
+        }
+
+        .timeline-thumb {
+            aspect-ratio: 4 / 3;
+            background: #0d1117;
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 4px;
+            object-fit: contain;
+            width: 56px;
+        }
+
+        .timeline-meta {
+            color: #8b949e;
+            font-size: 0.78rem;
+        }
     </style>
 </head>
 <body>
@@ -300,6 +328,16 @@
                 <h2>Health</h2>
                 <div id="health-content"></div>
             </div>
+
+            <div class="card">
+                <h2>Print Protection</h2>
+                <div id="print-protection-content"></div>
+            </div>
+
+            <div class="card">
+                <h2>Analysis Timeline</h2>
+                <div id="analysis-timeline-content"></div>
+            </div>
         </div>
 
         <div class="card">
@@ -325,6 +363,7 @@
         let configuredTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
         let refreshInFlight = false;
         let lastStatus = null;
+        let lastConfig = null;
         let countdownTimer = null;
         const optionalEndpointCache = new Map();
 
@@ -438,6 +477,7 @@
             const resp = await fetch(`${API_BASE}/api/config${printerQuery()}`);
             if (!resp.ok) throw new Error('Failed to load config');
             const data = await resp.json();
+            lastConfig = data;
             configuredTimeZone = data.timezone || configuredTimeZone;
             renderConfig(data);
             return data;
@@ -455,6 +495,14 @@
             renderEvents(await resp.json());
         }
 
+        async function loadAnalysisTimeline() {
+            const params = new URLSearchParams({ limit: '8' });
+            if (activePrinterId) params.set('printer_id', activePrinterId);
+            const resp = await fetch(`${API_BASE}/api/analysis/recent?${params.toString()}`);
+            if (!resp.ok) throw new Error('Failed to load analysis timeline');
+            renderAnalysisTimeline(await resp.json());
+        }
+
         function renderAllFromStatus(status) {
             renderBanner(status);
             renderStatus(status);
@@ -462,6 +510,7 @@
             renderLatestAnalysis(status);
             renderCameraHealth(status);
             renderActiveIssue(status);
+            renderPrintProtection(status);
             renderCountdown(status.active_event);
         }
 
@@ -568,8 +617,14 @@
             const ageMs = captureDate ? Date.now() - captureDate.getTime() : NaN;
             const staleMs = 2 * 60 * 1000;
             const stale = Number.isFinite(ageMs) && ageMs > staleMs;
-            const stateClass = !status.last_capture_time ? 'unhealthy' : stale ? 'degraded' : 'healthy';
-            const stateText = !status.last_capture_time ? 'No capture' : stale ? 'Stale frame' : 'Recent frame';
+            const captureError = status.last_capture_status === 'error';
+            const stateClass = captureError ? 'unhealthy' : !status.last_capture_time ? 'unhealthy' : stale ? 'degraded' : 'healthy';
+            const stateText = captureError ? 'Capture error' : !status.last_capture_time ? 'No capture' : stale ? 'Stale frame' : 'Recent frame';
+            const warning = captureError
+                ? (status.last_capture_error || 'Latest camera response was not a valid image.')
+                : stale
+                    ? 'Last valid frame is older than 2 minutes.'
+                    : 'None';
             document.getElementById('camera-health-content').innerHTML = `
                 <div class="status-item">
                     <label>Capture Status</label>
@@ -581,7 +636,7 @@
                 </div>
                 <div class="status-item">
                     <label>Warning</label>
-                    <span class="value">${stale ? 'Last frame is older than 2 minutes.' : 'None'}</span>
+                    <span class="value">${esc(warning)}</span>
                 </div>
             `;
         }
@@ -630,6 +685,74 @@
             renderOptionalActionButtons(event.event_id);
         }
 
+        function protectionState(status) {
+            const event = status.active_event;
+            const autoPauseEnabled = Boolean(lastConfig?.auto_pause_enabled);
+            if (!status.monitoring_enabled) {
+                return { label: 'Disabled', className: 'unhealthy', message: 'Monitoring is disabled.' };
+            }
+            if (event?.auto_pause_deadline) {
+                return { label: 'Pending Pause', className: 'degraded', message: 'Active issue is scheduled for auto-pause.' };
+            }
+            if (!status.printer_printing) {
+                return { label: 'Standby', className: 'muted', message: 'Printer is not currently printing.' };
+            }
+            if (autoPauseEnabled) {
+                return { label: 'Armed', className: 'healthy', message: 'Protection armed. No active issues.' };
+            }
+            return { label: 'Watching', className: 'healthy', message: 'Monitoring print, auto-pause disabled.' };
+        }
+
+        function renderPrintProtection(status) {
+            const config = lastConfig || {};
+            const event = status.active_event;
+            const state = protectionState(status);
+            const deadline = parseApiDate(event?.auto_pause_deadline);
+            const countdown = deadline ? `Auto-pause in ${formatDuration(deadline.getTime() - Date.now())}` : state.message;
+            document.getElementById('print-protection-content').innerHTML = `
+                <div class="status-item">
+                    <label>Protection Status</label>
+                    <span class="status-badge ${esc(state.className)}">${esc(state.label)}</span>
+                </div>
+                <div class="status-item">
+                    <label>Auto-Pause</label>
+                    <span class="value">${config.auto_pause_enabled ? 'Enabled' : 'Disabled'}</span>
+                </div>
+                <div class="status-item">
+                    <label>Notification Threshold</label>
+                    <span class="value">${Math.round((config.certainty_threshold_notify || 0) * 100)}%</span>
+                </div>
+                <div class="status-item">
+                    <label>Auto-Pause Threshold</label>
+                    <span class="value">${Math.round((config.certainty_threshold_auto_pause || 0) * 100)}%</span>
+                </div>
+                <div class="status-item">
+                    <label>Auto-Pause Delay</label>
+                    <span class="value">${Number(config.auto_pause_delay_minutes || 0)} minutes</span>
+                </div>
+                <div class="status-item">
+                    <label>Confirmation Frames</label>
+                    <span class="value">${Number(config.confirmation_frames || 0)}</span>
+                </div>
+                <div class="status-item">
+                    <label>Cooldown</label>
+                    <span class="value">${Number(config.cooldown_minutes || 0)} minutes</span>
+                </div>
+                <div class="${event?.auto_pause_deadline ? 'countdown' : 'muted'}" id="protection-countdown-text">${esc(countdown)}</div>
+                ${event ? `
+                    <div class="action-buttons">
+                        <button class="btn-danger" data-protection-action="pause">Pause Now</button>
+                        <button class="btn-primary" data-protection-action="acknowledge">Acknowledge</button>
+                        <button class="btn-warning" data-protection-action="snooze">Snooze 15 Min</button>
+                        <button class="btn-secondary" data-protection-action="ignore">Ignore</button>
+                    </div>
+                ` : ''}
+            `;
+            document.querySelectorAll('[data-protection-action]').forEach((button) => {
+                button.addEventListener('click', () => runEventAction(button.dataset.protectionAction, event.event_id));
+            });
+        }
+
         function renderCountdown(event) {
             const container = document.getElementById('auto-pause-countdown');
             if (countdownTimer) {
@@ -648,6 +771,10 @@
                         Auto-pause countdown: ${esc(formatDuration(remainingMs))}
                     </div>
                 `;
+                const protectionCountdown = document.getElementById('protection-countdown-text');
+                if (protectionCountdown) {
+                    protectionCountdown.textContent = `Auto-pause in ${formatDuration(remainingMs)}`;
+                }
             };
             update();
             countdownTimer = setInterval(update, 1000);
@@ -681,6 +808,39 @@
                     }).join('')}
                 </div>
             `;
+        }
+
+        function renderAnalysisTimeline(rows) {
+            const container = document.getElementById('analysis-timeline-content');
+            if (!rows.length) {
+                container.innerHTML = '<p class="muted">No analysis history yet</p>';
+                return;
+            }
+
+            container.innerHTML = rows.map((row) => {
+                const imageUrl = row.image_url ? `${API_BASE}${row.image_url}` : null;
+                const label = timelineLabel(row);
+                const severity = row.severity || 'low';
+                return `
+                    <div class="timeline-row">
+                        ${imageUrl
+                            ? `<img src="${esc(imageUrl)}" alt="Analysis thumbnail" class="timeline-thumb">`
+                            : '<div class="event-thumb-placeholder" style="width:56px;">No image</div>'}
+                        <div>
+                            <div class="event-type severity-${classToken(severity)}">${esc(label)}</div>
+                            <div class="timeline-meta">${esc(formatDateTime(row.created_at))}${row.severity ? ` · ${esc(row.severity)}` : ''}</div>
+                        </div>
+                        <span class="event-certainty">${Math.round((row.certainty || 0) * 100)}%</span>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function timelineLabel(row) {
+            if (row.result === 'clear') return 'Clear';
+            if (row.issue_type) return row.issue_type.replace(/_/g, ' ');
+            if (row.result === 'issue') return 'Possible Issue';
+            return row.result || 'Unknown';
         }
 
         function renderHealth(data) {
@@ -722,9 +882,12 @@
                 <div class="status-item"><label>Analyzer Provider</label><span class="value">${esc(data.analyzer_provider)}</span></div>
                 <div class="status-item"><label>Analyzer Device</label><span class="value">${esc(data.analyzer_device)}</span></div>
                 <div class="status-item"><label>Frame Interval</label><span class="value">${Number(data.frame_interval_seconds)}s</span></div>
+                <div class="status-item"><label>Confirmation Frames</label><span class="value">${Number(data.confirmation_frames || 0)}</span></div>
                 <div class="status-item"><label>Notification Threshold</label><span class="value">${Math.round((data.certainty_threshold_notify || 0) * 100)}%</span></div>
+                <div class="status-item"><label>Auto-Pause</label><span class="value">${data.auto_pause_enabled ? 'Enabled' : 'Disabled'}</span></div>
                 <div class="status-item"><label>Auto-Pause Threshold</label><span class="value">${Math.round((data.certainty_threshold_auto_pause || 0) * 100)}%</span></div>
                 <div class="status-item"><label>Auto-Pause Delay</label><span class="value">${Number(data.auto_pause_delay_minutes)} minutes</span></div>
+                <div class="status-item"><label>Cooldown</label><span class="value">${Number(data.cooldown_minutes || 0)} minutes</span></div>
             `;
         }
 
@@ -843,7 +1006,7 @@
                 await loadConfig();
                 const status = await fetchStatusOnce();
                 renderAllFromStatus(status);
-                await Promise.all([loadHealth(), loadEvents()]);
+                await Promise.all([loadHealth(), loadEvents(), loadAnalysisTimeline()]);
             } catch (e) {
                 console.error(e);
             } finally {

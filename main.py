@@ -13,7 +13,7 @@ from sqlmodel import Session
 
 from app.core.config import load_config, save_config, AppConfig
 from app.core.database import SessionLocal, init_db, get_session
-from app.api import events, actions
+from app.api import actions, analysis, events
 from app.api.schemas import (
     ConfigResponse,
     EventResponse,
@@ -117,6 +117,7 @@ app = FastAPI(
 # Include routers
 app.include_router(events.router)
 app.include_router(actions.router)
+app.include_router(analysis.router)
 
 
 @app.get("/health", response_model=HealthResponse)
@@ -227,6 +228,8 @@ def _printer_status_response(
             if service.last_capture_path
             else None
         ),
+        last_capture_status=service.last_capture_status,
+        last_capture_error=service.last_capture_error,
         last_analysis_time=service.last_analysis_time,
         latest_analysis_result=service.last_analysis_result,
         active_event=_active_event_response(service, session),
@@ -261,6 +264,8 @@ async def get_status(
         printer_printing=printer_status.printer_printing,
         last_capture_time=printer_status.last_capture_time,
         last_capture_image_url=printer_status.last_capture_image_url,
+        last_capture_status=printer_status.last_capture_status,
+        last_capture_error=printer_status.last_capture_error,
         last_analysis_time=printer_status.last_analysis_time,
         latest_analysis_result=printer_status.latest_analysis_result,
         active_event=printer_status.active_event,
@@ -296,9 +301,12 @@ async def get_config(printer_id: Optional[str] = None) -> ConfigResponse:
         analyzer_provider=config.model.provider,
         analyzer_device=config.model.device,
         frame_interval_seconds=config.monitoring.frame_interval_seconds,
+        confirmation_frames=config.monitoring.confirmation_frames,
         certainty_threshold_notify=config.monitoring.certainty_threshold_notify,
+        auto_pause_enabled=config.monitoring.auto_pause_enabled,
         certainty_threshold_auto_pause=config.monitoring.certainty_threshold_auto_pause,
         auto_pause_delay_minutes=config.monitoring.auto_pause_delay_minutes,
+        cooldown_minutes=config.monitoring.cooldown_minutes,
         printers=[
             {
                 "id": printer.id,
