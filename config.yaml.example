@@ -1,0 +1,41 @@
+"""Sample configuration file for HA Print Monitor."""
+
+app_base_url: "http://localhost:8080"
+
+home_assistant:
+  url: "http://homeassistant.local:8123"
+  token: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."  # Your long-lived token
+  camera_entity: "camera.prusa_camera"
+  printer_state_entity: "sensor.prusa_print_status"
+  printing_states:
+    - "printing"
+    - "paused"
+  pause_service:
+    domain: "button"
+    service: "press"
+    target: "button.prusa_pause_print"
+    data: {}
+  notify_services:
+    - "notify.mobile_app_alex_phone"
+    - "notify.mobile_app_family_phone"
+
+monitoring:
+  enabled: true
+  frame_interval_seconds: 30
+  confirmation_frames: 2
+  certainty_threshold_notify: 0.70
+  certainty_threshold_auto_pause: 0.85
+  auto_pause_delay_minutes: 15
+  snooze_minutes: 15
+
+model:
+  provider: "baseline"  # baseline, yolo, onnx, etc.
+  model_path: null
+  device: "cpu"
+
+security:
+  action_token: "change-me-in-production-to-a-long-random-string"
+
+retention:
+  keep_images_days: 7
+  keep_events_days: 30
