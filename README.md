@@ -15,11 +15,24 @@ This fork is packaged for Home Assistant OS or Home Assistant Supervised. It use
 
 ## Installation
 
-1. Copy this repository folder into your Home Assistant add-ons directory, or add it as a local/custom add-on repository.
-2. In Home Assistant, go to Settings -> Add-ons -> Add-on Store.
+1. In Home Assistant, go to Settings -> Add-ons -> Add-on Store.
+2. Open the three-dot menu, choose **Repositories**, and add:
+   `https://github.com/nsocwx/ha_print_monitor_addon`
 3. Refresh the store if needed, open **HA Print Monitor**, and install it.
 4. Configure the add-on options.
 5. Start the add-on and open the dashboard with **Open Web UI**.
+
+For local development, this repository follows the Home Assistant add-on store layout:
+
+```text
+repository.yaml
+ha_print_monitor/
+  config.yaml
+  build.yaml
+  Dockerfile
+```
+
+The `ha_print_monitor/` directory is the actual add-on package Home Assistant builds.
 
 The dashboard is served internally on port `8080` for ingress. The add-on does not publish a host port by default.
 
