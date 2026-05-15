@@ -14,6 +14,9 @@ SENSITIVE_KEYS = ("token", "secret", "authorization", "bearer")
 def redact(value: str) -> str:
     """Redact obvious tokens/secrets from log text."""
     text = str(value)
+    supervisor_token = os.getenv("SUPERVISOR_TOKEN")
+    if supervisor_token:
+        text = text.replace(supervisor_token, "[REDACTED]")
     for key in SENSITIVE_KEYS:
         if key in text.lower():
             return "[redacted sensitive log message]"

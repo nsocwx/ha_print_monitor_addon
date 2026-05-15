@@ -4,6 +4,7 @@ import asyncio
 import os
 import shutil
 import zipfile
+import re
 from datetime import datetime
 from pathlib import Path
 from contextlib import asynccontextmanager
@@ -15,7 +16,7 @@ from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 from sqlalchemy import text
 from sqlmodel import Session
 
-from app.core.config import CONFIG_FILE, DATA_DIR, load_config, save_config, AppConfig
+from app.core.config import CONFIG_FILE, DATA_DIR, load_config, AppConfig, redact_sensitive
 from app.core.database import DATABASE_URL, SessionLocal, init_db, get_session
 from app.api import actions, analysis, events
 from app.api.schemas import (
@@ -58,12 +59,12 @@ async def lifespan(app: FastAPI):
         config = load_config()
         setup_logging(json_output=config.logging.json_logs, log_level=config.logging.log_level)
         logger.info("Configuration loaded successfully")
-        logger.info(f"Home Assistant URL: {config.home_assistant.url}")
+        logger.info("Home Assistant API: Supervisor Core API")
         logger.info(f"Configured printers: {[printer.id for printer in config.get_printers()]}")
-        if config.notifications.enabled and "localhost" in config.app_base_url:
+        if config.notifications.enabled and not config.external_base_url:
             logger.warning(
-                "APP_BASE_URL is localhost while notifications are enabled; "
-                "mobile action/image links may not be reachable outside this host"
+                "external_base_url is not configured; mobile push image/action links "
+                "may not be reachable outside Home Assistant ingress"
             )
         if config.security.action_signing_secret.startswith("change-me"):
             logger.warning(
@@ -71,7 +72,7 @@ async def lifespan(app: FastAPI):
                 "secret before relying on notification action links"
             )
     except Exception as e:
-        logger.error(f"Failed to load configuration: {e}")
+        logger.error("Failed to load configuration: %s", redact_sensitive(str(e)))
         raise
 
     # Initialize database
@@ -100,7 +101,7 @@ async def lifespan(app: FastAPI):
                 logger.warning(
                     "Configured Home Assistant entity validation failed for %s: %s",
                     service.printer_name,
-                    e,
+                    redact_sensitive(str(e)),
                 )
     except Exception as e:
         logger.error(f"Failed to initialize monitor service: {e}")
@@ -115,7 +116,7 @@ async def lifespan(app: FastAPI):
                 )
                 await asyncio.sleep(config.monitoring.frame_interval_seconds)
             except Exception as e:
-                logger.error(f"Error in monitoring loop: {e}")
+                logger.error("Error in monitoring loop: %s", redact_sensitive(str(e)))
                 await asyncio.sleep(5)
 
     monitoring_task = asyncio.create_task(run_monitoring())
@@ -181,7 +182,7 @@ async def health_check() -> HealthResponse:
             session.execute(text("SELECT 1"))
         db_status = "healthy"
     except Exception as e:
-        logger.error(f"Database health check failed: {e}")
+        logger.error("Database health check failed: %s", redact_sensitive(str(e)))
         db_status = "unhealthy"
 
     # Check Home Assistant
@@ -190,7 +191,7 @@ async def health_check() -> HealthResponse:
         await first_service.ha_service.test_connection()
         ha_status = "healthy"
     except Exception as e:
-        logger.error(f"HA health check failed: {e}")
+        logger.error("HA health check failed: %s", redact_sensitive(str(e)))
         ha_status = "unhealthy"
 
     # Check analyzer
@@ -200,8 +201,16 @@ async def health_check() -> HealthResponse:
         else "unhealthy"
     )
 
+    addon_checks = [
+        bool(os.getenv("SUPERVISOR_TOKEN")),
+        DATA_DIR.exists(),
+        (DATA_DIR / "captures").exists(),
+        config is not None and config.home_assistant.url == "http://supervisor/core/api",
+    ]
+    addon_status = "healthy" if all(addon_checks) else "unhealthy"
+
     # Determine overall status
-    statuses = [db_status, ha_status, analyzer_status]
+    statuses = [db_status, ha_status, analyzer_status, addon_status]
     if all(s == "healthy" for s in statuses):
         overall = "healthy"
     elif any(s == "healthy" for s in statuses):
@@ -216,6 +225,7 @@ async def health_check() -> HealthResponse:
         database=db_status,
         home_assistant=ha_status,
         analyzer=analyzer_status,
+        addon=addon_status,
         uptime_seconds=uptime,
         app_version=APP_VERSION,
         build_date=BUILD_DATE,
@@ -344,8 +354,9 @@ async def get_config(printer_id: Optional[str] = None) -> ConfigResponse:
     service = _get_monitor_service(printer_id)
     return ConfigResponse(
         app_base_url=config.app_base_url,
+        external_base_url=config.external_base_url,
         timezone=config.timezone,
-        home_assistant_url=config.home_assistant.url,
+        home_assistant_url="Supervisor Core API",
         camera_entity=config.home_assistant.camera_entity,
         printer_state_entity=config.home_assistant.printer_state_entity,
         selected_printer={
@@ -403,7 +414,7 @@ async def diagnostics() -> dict:
             "git_commit": GIT_COMMIT,
         },
         "paths": {
-            "config_file": str(CONFIG_FILE),
+            "options_file": str(CONFIG_FILE),
             "database_url": DATABASE_URL.replace(str(DATA_DIR), "/data"),
             "data_dir": str(DATA_DIR),
         },
@@ -415,8 +426,9 @@ async def diagnostics() -> dict:
         },
         "config": {
             "app_base_url": config.app_base_url,
+            "external_base_url": config.external_base_url,
             "timezone": config.timezone,
-            "home_assistant_url": config.home_assistant.url,
+            "home_assistant_url": "Supervisor Core API",
             "monitoring": config.monitoring.model_dump(),
             "safety": config.safety.model_dump(),
             "camera": config.camera.model_dump(),
@@ -436,11 +448,11 @@ async def diagnostics() -> dict:
                 "printer_printing": service.is_printer_printing(),
                 "camera_stale": service.camera_is_stale(),
                 "last_capture_status": service.last_capture_status,
-                "last_capture_error": service.last_capture_error,
+                "last_capture_error": redact_sensitive(service.last_capture_error or ""),
                 "capture_success_count": service.capture_success_count,
                 "capture_failure_count": service.capture_failure_count,
                 "model_status": service.model_status,
-                "last_analysis_error": service.last_analysis_error,
+                "last_analysis_error": redact_sensitive(service.last_analysis_error or ""),
             }
             for printer_id, service in monitor_services.items()
         },
@@ -449,13 +461,13 @@ async def diagnostics() -> dict:
 
 @app.get("/api/backup")
 async def backup() -> FileResponse:
-    """Create a simple backup archive with config and SQLite database."""
+    """Create a simple backup archive with add-on options and SQLite database."""
     backup_dir = DATA_DIR / "backups"
     backup_dir.mkdir(parents=True, exist_ok=True)
     archive_path = backup_dir / f"ha-print-monitor-backup-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}.zip"
     with zipfile.ZipFile(archive_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         if CONFIG_FILE.exists():
-            archive.write(CONFIG_FILE, "config.yaml")
+            archive.write(CONFIG_FILE, "options.json")
         db_path = DATA_DIR / "app.db"
         if db_path.exists():
             archive.write(db_path, "app.db")
@@ -465,15 +477,24 @@ async def backup() -> FileResponse:
 @app.get("/captures/{filename}")
 async def get_capture(filename: str):
     """Get a capture image."""
-    capture_path = Path("/data/captures") / filename
+    captures_dir = (DATA_DIR / "captures").resolve()
+    if not re.fullmatch(r"[A-Za-z0-9_.-]+\.(?:jpg|jpeg|png|webp)", filename):
+        raise HTTPException(status_code=400, detail="Invalid capture filename")
 
-    if not capture_path.exists():
+    capture_path = (captures_dir / filename).resolve()
+
+    if captures_dir not in capture_path.parents:
+        raise HTTPException(status_code=403, detail="Access denied")
+    if not capture_path.exists() or not capture_path.is_file():
         raise HTTPException(status_code=404, detail="Capture not found")
 
-    if not str(capture_path).startswith(str(Path("/data/captures").resolve())):
-        raise HTTPException(status_code=403, detail="Access denied")
-
-    return FileResponse(capture_path, media_type="image/jpeg")
+    media_type = {
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".png": "image/png",
+        ".webp": "image/webp",
+    }.get(capture_path.suffix.lower(), "application/octet-stream")
+    return FileResponse(capture_path, media_type=media_type)
 
 
 @app.get("/favicon.ico")

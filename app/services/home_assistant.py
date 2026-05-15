@@ -1,10 +1,11 @@
-"""Home Assistant integration service."""
+"""Home Assistant Supervisor/Core API integration service."""
 import logging
 import asyncio
 import httpx
 from dataclasses import dataclass
 from typing import Optional, Dict, Any, List
 from datetime import datetime
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -43,12 +44,7 @@ class HAService:
         retry_count: int = 2,
         retry_backoff_seconds: float = 1.0,
     ):
-        """Initialize HA service.
-
-        Args:
-            url: Home Assistant URL (e.g., http://localhost:8123)
-            token: Long-lived access token
-        """
+        """Initialize HA service with the Supervisor-provided bearer token."""
         self.url = url.rstrip("/")
         self.token = token
         self.timeout_seconds = timeout_seconds
@@ -61,6 +57,13 @@ class HAService:
             "Content-Type": "application/json",
         }
         self._client: Optional[httpx.Client] = None
+
+    @staticmethod
+    def redact(value: str) -> str:
+        token = os.getenv("SUPERVISOR_TOKEN")
+        if token:
+            value = value.replace(token, "[REDACTED]")
+        return value
 
     @property
     def client(self) -> httpx.Client:
@@ -101,8 +104,13 @@ class HAService:
                 raise
             except (httpx.ConnectError, httpx.TimeoutException, httpx.RemoteProtocolError) as exc:
                 last_exc = exc
-                self.last_error = f"Home Assistant network error: {exc}"
-                logger.warning("Transient Home Assistant failure on %s %s: %s", method, path, exc)
+                self.last_error = self.redact(f"Home Assistant network error: {exc}")
+                logger.warning(
+                    "Transient Home Assistant failure on %s %s: %s",
+                    method,
+                    path,
+                    self.redact(str(exc)),
+                )
             except httpx.HTTPStatusError as exc:
                 status = exc.response.status_code
                 self.last_error = f"Home Assistant HTTP {status}"
@@ -113,7 +121,9 @@ class HAService:
             if attempt < self.retry_count:
                 await asyncio.sleep(self.retry_backoff_seconds * (attempt + 1))
 
-        raise HomeAssistantNetworkError(f"Home Assistant request failed: {last_exc}") from last_exc
+        raise HomeAssistantNetworkError(
+            self.redact(f"Home Assistant request failed: {last_exc}")
+        ) from last_exc
 
     async def get_state(self, entity_id: str) -> Dict[str, Any]:
         """Get entity state from Home Assistant.

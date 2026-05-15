@@ -1,563 +1,122 @@
-# HA Print Monitor - Home Assistant 3D Print Monitoring
+# HA Print Monitor Home Assistant Add-on
 
-This is a containerized web application that monitors 3D print cameras via Home Assistant, uses image recognition to detect potential print failures, and can automatically pause the printer with user notification.
+HA Print Monitor watches a 3D printer camera while Home Assistant says the printer is actively printing. It captures frames, runs model analysis, records events, sends notifications, and can pause a print through a configured Home Assistant service when safety checks allow it.
 
-## Features
+This fork is packaged for Home Assistant OS or Home Assistant Supervised. It uses Home Assistant ingress for the dashboard and the Supervisor-provided API token for Home Assistant API access.
 
-- **Real-time Camera Monitoring**: Captures frames from any Home Assistant camera
-- **AI-Powered Detection**: Detects print failures like spaghetti failures, layer shifts, blobs, and more
-- **Smart Notifications**: Sends actionable notifications via Home Assistant with pause/snooze/ignore options
-- **Auto-Pause**: Automatically pauses printer after timeout if high-confidence issue detected
-- **Event History**: Stores all detection events in SQLite database
-- **Web Dashboard**: Simple real-time dashboard showing printer state and recent events
-- **Modular ML**: Supports swapping between different analysis models (baseline, YOLO, ONNX, etc.)
+## Requirements
 
-## Home Production Deployment
+- Home Assistant OS or Home Assistant Supervised
+- A Home Assistant camera entity for the printer
+- A printer state entity whose state clearly identifies active printing
+- A pause service/entity, such as `button.press` on a safe pause button
+- A notify service, such as `notify.mobile_app_mobile_phone`
+- A model file under `/data/models` when using the `onnx` provider
 
-For a home-production install, use Docker Compose with the provided `docker-compose.yml` and a persistent `./data` directory. Copy `.env.example` to `.env`, set `APP_BASE_URL` to the URL your phone can reach, and generate long random values for `ACTION_TOKEN` and `ACTION_SIGNING_SECRET`.
+## Installation
 
-```bash
-cp .env.example .env
-docker compose up -d --build
-```
+1. Copy this repository folder into your Home Assistant add-ons directory, or add it as a local/custom add-on repository.
+2. In Home Assistant, go to Settings -> Add-ons -> Add-on Store.
+3. Refresh the store if needed, open **HA Print Monitor**, and install it.
+4. Configure the add-on options.
+5. Start the add-on and open the dashboard with **Open Web UI**.
 
-The container runs as a non-root user, has a `/health` healthcheck, restarts with `unless-stopped`, and limits Docker logs to 10 MB x 3 files. Persistent state lives in `/data`, including `config.yaml`, `app.db`, captures, logs, downloaded models, and backups.
+The dashboard is served internally on port `8080` for ingress. The add-on does not publish a host port by default.
 
-### Reverse Proxy
+## Authentication
 
-Set `APP_BASE_URL` to the public URL of the app so notification images and action links work from mobile devices. Enable forwarded headers only when the app is behind a trusted proxy:
+The add-on uses `SUPERVISOR_TOKEN`, which Home Assistant injects automatically because `homeassistant_api: true` is enabled in `config.yaml`.
 
-```env
-APP_BASE_URL=https://prints.example.com
-FORWARDED_HEADERS=true
-```
+No Home Assistant long-lived access token is required for this add-on version. Do not paste a token into the options. The Supervisor token is not shown in diagnostics, UI responses, errors, or normal logs.
 
-Caddy example:
+Long-lived access tokens are only relevant for the standalone Docker version, not this add-on fork.
 
-```caddyfile
-prints.example.com {
-  reverse_proxy ha-print-monitor:8080
-}
-```
+## Options
 
-Nginx example:
-
-```nginx
-location / {
-  proxy_pass http://ha-print-monitor:8080;
-  proxy_set_header Host $host;
-  proxy_set_header X-Forwarded-Host $host;
-  proxy_set_header X-Forwarded-Proto $scheme;
-}
-```
-
-### Home Assistant Token
-
-HA Print Monitor uses the official Home Assistant REST API authorization pattern: `Authorization: Bearer TOKEN`. Create a long-lived access token from your Home Assistant user profile page and store it in `data/config.yaml` or `.env` as `HA_TOKEN`. Never paste this token into the dashboard or share diagnostics that have not been redacted.
-
-Required entities per printer:
-
-- Camera entity, such as `camera.prusa_camera` or `camera.octoprint_camera`
-- Printer state entity, such as a PrusaLink or OctoPrint state sensor
-- Pause service target, such as a pause button entity
-- Optional notify services, such as `notify.mobile_app_phone`
-
-Only include active printing states in `printing_states`. Do not include idle, ready, paused, finished, error, or standby states unless you intentionally want captures and analysis to run during those states.
-
-### Safety Model
-
-Auto-pause is conservative. The app does not pause when Home Assistant is unreachable, the printer state is unknown or no longer printing, the latest issue frame is stale, severity/certainty thresholds are not met, or the same event has already been paused. Manual and notification actions use signed one-time tokens; notification URLs do not reuse the dashboard operator token.
-
-To test pause safely, configure a harmless script or test button as the pause service first, trigger a test event, and confirm the service call in Home Assistant before pointing the config at the real printer pause control.
-
-### Troubleshooting
-
-- Dashboard health: open `/` and review Health, Camera Health, Print Protection, and Analysis Timeline.
-- Machine-readable diagnostics: `GET /api/diagnostics` returns redacted config, disk, model, HA, and printer state.
-- Backup: `GET /api/backup` downloads a zip containing `config.yaml` and SQLite database.
-- Logs: `docker compose logs -f ha-print-monitor`; file logs are under `data/logs`.
-- Mobile notifications: confirm `APP_BASE_URL` is externally reachable and not `localhost`.
-
-### Backup And Updates
-
-Back up the whole `data/` directory before updates:
-
-```bash
-docker compose down
-tar -czf ha-print-monitor-data-backup.tgz data
-docker compose up -d --build
-```
-
-Known limitations: restore is currently manual by replacing files under `data/` while the container is stopped; action tokens are one-time and expire, so old notification buttons may stop working after the configured TTL.
-
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────────┐
-│          Home Assistant Instance                        │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  │
-│  │  Printer     │  │  Camera      │  │  Notify      │  │
-│  │  State       │  │  Feed        │  │  Services    │  │
-│  └──────────────┘  └──────────────┘  └──────────────┘  │
-└────────────┬─────────────────────────────┬──────────────┘
-             │ REST/WS API                 │
-             │                             │
-     ┌───────▼─────────────────────────────▼────────────┐
-     │     HA Print Monitor Container                   │
-     │  ┌────────────────────────────────────────────┐  │
-     │  │  FastAPI Web Service                       │  │
-     │  │  - REST API for status/events/actions      │  │
-     │  │  - Web Dashboard (static HTML+JS)          │  │
-     │  ├────────────────────────────────────────────┤  │
-     │  │  Monitor Service                           │  │
-     │  │  - Polls Home Assistant state              │  │
-     │  │  - Captures camera frames                  │  │
-     │  │  - Runs image analysis                     │  │
-     │  │  - Manages event lifecycle                 │  │
-     │  ├────────────────────────────────────────────┤  │
-     │  │  Image Analyzer (Pluggable)                │  │
-     │  │  - Baseline (heuristic)                    │  │
-     │  │  - YOLO (real model)                       │  │
-     │  │  - ONNX (future)                           │  │
-     │  ├────────────────────────────────────────────┤  │
-     │  │  SQLite Database & File Storage            │  │
-     │  │  /data/app.db - Events                     │  │
-     │  │  /data/captures/ - Images                  │  │
-     │  └────────────────────────────────────────────┘  │
-     └────────────────────────────────────────────────────┘
-             │
-             │ Docker Volume: /data
-             │
-         ┌───▼───┐
-         │ /data │ (persistent storage)
-         └───────┘
-```
-
-## Quick Start
-
-### 1. Prerequisites
-
-- Home Assistant instance running
-- A configured printer camera entity
-- A printer state entity (sensor or binary_sensor)
-- Home Assistant long-lived access token
-- Docker and Docker Compose
-
-### 2. Get Long-Lived Token from Home Assistant
-
-1. Go to Home Assistant > Settings > Users
-2. Click your username at the bottom
-3. Scroll to "Long-Lived Access Tokens" section
-4. Click "Create Token"
-5. Give it a name like "HA Print Monitor" and copy the token
-
-### 3. Identify Your Entities
-
-In Home Assistant developer tools (Developer Tools > States), find:
-
-- **Camera entity**: Look for `camera.*` (e.g., `camera.prusa_camera`)
-- **Printer state entity**: Look for `sensor.printer_*` (e.g., `sensor.prusa_print_status`)
-- **Notify services**: Available at Developer Tools > Services (domain: `notify`)
-- **Pause action**: Usually a `button.printer_pause` or call to `button.press` service
-
-### 4. Configure the App
-
-Create `data/config.yaml`:
+Configure options in the Home Assistant add-on Configuration tab. Example:
 
 ```yaml
-app_base_url: "http://192.168.1.100:8080"
-
-home_assistant:
-  url: "http://homeassistant.local:8123"
-  token: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-  camera_entity: "camera.prusa_camera"
-  printer_state_entity: "sensor.prusa_print_status"
-  printing_states:
-    - "printing"
-    - "paused"
-  pause_service:
-    domain: "button"
-    service: "press"
-    target: "button.prusa_pause_print"
-    data: {}
-  notify_services:
-    - "notify.mobile_app_mobile_phone"
-
+external_base_url: null
+printers:
+  - printer_id: mk4s
+    name: MK4s
+    camera_entity: camera.example_camera
+    printer_state_entity: sensor.example_printer_state
+    printing_states:
+      - printing
+      - Printing
+      - running
+    pause_service:
+      domain: button
+      service: press
+      target: button.example_pause_print
+      data: {}
+    notify_services:
+      - notify.mobile_app_mobile_phone
 monitoring:
   enabled: true
   frame_interval_seconds: 30
-  confirmation_frames: 2
+  confirmation_frames: 3
   certainty_threshold_notify: 0.70
   certainty_threshold_auto_pause: 0.85
   auto_pause_delay_minutes: 15
   snooze_minutes: 15
-
+  cooldown_minutes: 10
 model:
-  provider: "baseline"
-  model_path: null
-  options_path: null
-  prototypes_path: null
-  auto_download: true
-  models_dir: "/data/models/printguard"
-  device: "cpu"
-
-security:
-  action_token: "generate-a-long-random-string-here"
-
+  provider: onnx
+  model_path: /data/models/model.onnx
+  device: cpu
+camera:
+  stale_after_seconds: 120
+  capture_timeout_seconds: 15
+  retry_count: 2
+  retry_backoff_seconds: 3
 retention:
-  keep_images_days: 7
-  keep_events_days: 30
+  keep_clear_captures_hours: 24
+  keep_event_captures_days: 30
+  keep_events_days: 90
+  max_capture_storage_mb: 2048
+security:
+  action_token_expiration_hours: 24
+advanced:
+  log_level: info
+  json_logs: false
 ```
 
-### 5. Start the Container
+Runtime data is stored under `/data`, including the SQLite database, captures, logs, backups, and model files.
 
-```bash
-docker-compose up -d
-```
+## Ingress And Mobile Links
 
-Access the dashboard at: http://localhost:8080
+Ingress is excellent for using the dashboard inside Home Assistant. Browser API calls, static assets, and capture images use relative URLs so they work when Home Assistant mounts the add-on under an ingress path.
 
-### 6. Set Up Home Assistant Notifications
+Mobile push notification images and action URLs are different: phones may need a URL reachable from the phone's network. Set `external_base_url` to an externally reachable trusted URL if you want notification images and action links. This could be Home Assistant Cloud/Nabu Casa, a reverse proxy, or another trusted route to the add-on.
 
-In Home Assistant `automations.yaml` or via UI automation editor:
+If `external_base_url` is not configured, notifications can still be sent, but image previews and action links may be omitted or may not work outside the Home Assistant UI.
 
-```yaml
-alias: "HA Print Monitor Alert"
-trigger:
-  platform: webhook
-  webhook_id: "your-webhook-id"
-action:
-  service: notify.mobile_app_phone
-  data:
-    title: "Print Alert"
-    message: "{{ trigger.json.message }}"
-    data:
-      actions:
-        - action: URI
-          title: "Pause"
-          uri: "{{ trigger.json.pause_url }}"
-```
+## Safe Pause Testing
 
-Or use the app's built-in notifications which send directly to Home Assistant notify services.
-
-## API Endpoints
-
-### Status & Health
-
-- **GET /health** - System health check
-- **GET /api/status** - Current status
-- **GET /api/config** - Current configuration
-
-### Events
-
-- **GET /api/events** - List all events (query: `limit`, `status`)
-- **GET /api/events/{event_id}** - Get specific event
-- **GET /api/events/active/current** - Get current active event
-
-### Actions (require action_token)
-
-- **POST /api/actions/pause** - Pause printer
-  ```
-  ?event_id=event_xxx&token=your-token
-  ```
-- **POST /api/actions/ignore** - Ignore issue
-  ```
-  ?event_id=event_xxx&token=your-token
-  ```
-- **POST /api/actions/snooze** - Snooze notifications
-  ```
-  ?event_id=event_xxx&token=your-token&minutes=15
-  ```
-- **POST /api/actions/acknowledge** - Acknowledge issue
-  ```
-  ?event_id=event_xxx&token=your-token
-  ```
-
-### Images
-
-- **GET /captures/{filename}** - Download captured image
-- **GET /** - Web dashboard
-
-## Configuration Reference
-
-### home_assistant
-
-- `url`: Home Assistant URL (e.g., `http://homeassistant.local:8123`)
-- `token`: Long-lived access token
-- `camera_entity`: Camera entity ID (e.g., `camera.printer`)
-- `printer_state_entity`: Printer state entity (e.g., `sensor.status`)
-- `printing_states`: List of states that count as "printing"
-- `pause_service`: Service call config for pausing
-- `notify_services`: List of notify service names
-
-### monitoring
-
-- `enabled`: Enable/disable monitoring
-- `frame_interval_seconds`: Capture interval (default: 30s)
-- `confirmation_frames`: Require N detections before alerting
-- `certainty_threshold_notify`: Certainty % to send notification (default: 70%)
-- `certainty_threshold_auto_pause`: Certainty % for auto-pause (default: 85%)
-- `auto_pause_delay_minutes`: Minutes to wait before auto-pause (default: 15)
-- `snooze_minutes`: Default snooze duration (default: 15)
-
-### model
-
-- `provider`: `baseline` | `onnx` | `yolo` | etc.
-- `model_path`: Path to model file. If `provider` is `onnx` and this is empty, the app downloads PrintGuard `model.onnx` from Hugging Face.
-- `options_path`: Optional path to PrintGuard `opt.json`
-- `prototypes_path`: Optional path to PrintGuard `prototypes.pkl`
-- `auto_download`: Download missing PrintGuard ONNX artifacts automatically when using `provider: "onnx"`
-- `models_dir`: Directory where downloaded PrintGuard artifacts are stored
-- `device`: `cpu` | `cuda` | etc.
-
-### PrintGuard ONNX
-
-To use the PrintGuard model from Hugging Face, set:
-
-```yaml
-model:
-  provider: "onnx"
-  auto_download: true
-  models_dir: "/data/models/printguard"
-  device: "cpu"
-```
-
-On startup, the app downloads `model.onnx`, `opt.json`, and `prototypes.pkl` from `nsocwx/PrintGuard` if they are not already present. You can also mount the files manually and set `model_path`, `options_path`, and `prototypes_path` explicitly.
-
-## Adding a Real ML Model
-
-The app uses a pluggable analyzer architecture. To add a real model:
-
-### 1. Create a New Analyzer Class
-
-```python
-# app/analysis/yolo.py
-from .base import ImageAnalyzer, DetectionResult, AnalysisContext
-
-class YOLOAnalyzer(ImageAnalyzer):
-    def __init__(self, model_path: str, device: str):
-        self.model_path = model_path
-        self.device = device
-        self.model = None
-
-    def initialize(self) -> bool:
-        # Load YOLO model
-        return True
-
-    async def analyze_frame(self, image_data: bytes, context: Optional[AnalysisContext]) -> DetectionResult:
-        # Run YOLO inference
-        # Return DetectionResult with issue_detected, certainty, etc.
-        pass
-
-    def cleanup(self):
-        pass
-```
-
-### 2. Register in Factory
-
-```python
-# app/analysis/factory.py
-elif provider == "yolo":
-    return YOLOAnalyzer(model_path, device)
-```
-
-### 3. Update config.yaml
-
-```yaml
-model:
-  provider: "yolo"
-  model_path: "/data/models/print-failure-yolo.pt"
-  device: "cuda"
-```
-
-## Security Notes
-
-- **Change action_token** in production - use a long random string
-- **Use HTTPS** in production - configure a reverse proxy (nginx, traefik)
-- **Protect /api/actions** - consider adding IP whitelist or additional auth
-- **Don't log tokens** - the app filters HA token from logs
-- **Use environment variables** for sensitive config in production
-- **Keep Home Assistant token secure** - only used server-side
-
-## How Auto-Pause Works
-
-1. **Detection**: Frame analysis detects potential issue
-2. **Threshold Check**: Certainty > auto_pause threshold (85% default)?
-3. **Severity Check**: Is severity high or critical?
-4. **Notification**: User is notified immediately with action buttons
-5. **Countdown**: 15-minute timer starts (configurable)
-6. **User Action**: 
-   - Click "Pause" → Immediately pauses
-   - Click "Ignore" → No auto-pause
-   - Click "Snooze" → Delay auto-pause 15 more minutes
-   - Do nothing → Auto-pause triggers
-7. **Confirmation**: Before pausing, re-check if issue still present
-8. **Pause**: Call Home Assistant pause service
-9. **Notification**: Send second notification that print was paused
+1. Configure one printer with the correct camera, printer state entity, pause service, and notify service.
+2. Start with a safe/non-printing printer state and send a test notification from the dashboard.
+3. Confirm that your pause service target is correct before printing.
+4. Test pause behavior only when it is safe for the printer. The add-on checks that the latest issue frame is recent, the printer is still in a configured printing state, and the event has not already been paused.
 
 ## Troubleshooting
 
-### Dashboard shows "Connection failed" for Home Assistant
+- **HA API 401/403**: Confirm the add-on is running under Home Assistant Supervisor and `homeassistant_api: true` is present. Restart the add-on so Home Assistant injects `SUPERVISOR_TOKEN`.
+- **Camera capture fails**: Check that `camera_entity` exists, returns an image through Home Assistant, and responds before `capture_timeout_seconds`.
+- **Entity not found**: Verify the exact entity IDs in Developer Tools -> States.
+- **Notification image not showing**: Configure `external_base_url` with a phone-reachable URL. Ingress-only URLs often are not usable by push notification clients.
+- **Ingress path issues**: Refresh the dashboard and confirm you opened it via **Open Web UI**. The UI uses relative fetch and image URLs.
+- **Model load failure**: Confirm `model.provider`, `model_path`, and CPU/CUDA device settings. Put ONNX models under `/data/models`.
 
-- Check HA URL is correct and accessible
-- Verify long-lived token is valid (hasn't expired)
-- Check firewall between container and HA
-- View logs: `docker-compose logs ha-print-monitor`
+## Backup
 
-### No camera images captured
+Back up `/data`. It contains `options.json`, the database, captures, logs, backups, and model files. Home Assistant add-on backups should include this data.
 
-- Verify camera entity ID exists in HA
-- Camera must be accessible via Home Assistant camera proxy
-- Check HA user has permission to access camera
-- Test in HA UI first: Development Tools > Call Service
+## Updating
 
-### Events showing but no auto-pause
+Update the add-on from Home Assistant after pulling or replacing the local/custom repository. Review release notes, then rebuild/restart the add-on. Keep a backup of `/data` before major updates.
 
-- Check `certainty_threshold_auto_pause` setting
-- Verify issue severity is high/critical
-- Check pause service configuration matches your setup
-- Review logs for pause attempt errors
+## Development Only
 
-### High false positive rate
-
-- Adjust `certainty_threshold_notify` higher
-- Increase `confirmation_frames` requirement
-- Switch to better model (replace baseline)
-- Add more camera adjustments (lighting, angle)
-
-### Database errors
-
-- Check `/data` volume has write permissions
-- Ensure sufficient disk space
-- Check logs for SQLite errors
-- May need to delete `/data/app.db` to reset
-
-## Docker Compose Example
-
-```yaml
-version: '3.8'
-
-services:
-  ha-print-monitor:
-    build: .
-    container_name: ha-print-monitor
-    restart: unless-stopped
-    ports:
-      - "8080:8080"
-    volumes:
-      - ./data:/data
-    environment:
-      - DATA_DIR=/data
-      - HA_URL=http://homeassistant:8123
-      - HA_TOKEN=eyJhbGciOi...
-      - HA_CAMERA_ENTITY=camera.printer
-      - HA_PRINTER_STATE_ENTITY=sensor.printer_status
-      - APP_BASE_URL=http://192.168.1.100:8080
-      - ACTION_TOKEN=your-secure-random-token
-    networks:
-      - ha_network
-
-networks:
-  ha_network:
-    external: true
-```
-
-## Model Architecture
-
-The baseline analyzer uses:
-
-- **Motion Detection**: Compares consecutive frames to detect unusual movement
-- **Brightness Analysis**: Detects nozzle-related anomalies via lighting changes
-- **Edge Detection**: Identifies blob and filament issues
-- **Layer Shift Detection**: Analyzes edge alignment across frames
-
-**Note**: The baseline is a proof-of-concept. For production, integrate a real model:
-- **YOLO**: https://github.com/ultralytics/yolov5
-- **TensorFlow Lite**: For edge deployment
-- **OpenAI Vision**: For cloud-based analysis (future)
-
-## Building from Source
-
-```bash
-git clone <repo>
-cd ha-print-monitor
-
-# Create data directory
-mkdir -p data
-
-# Copy example config
-cp config.yaml.example data/config.yaml
-
-# Edit configuration
-nano data/config.yaml
-
-# Build and run
-docker-compose up --build
-```
-
-## Development
-
-### Install Dependencies
-
-```bash
-pip install -r requirements.txt
-```
-
-### Run Locally (without Docker)
-
-```bash
-export DATA_DIR=/tmp/ha-print-monitor
-mkdir -p $DATA_DIR
-cp config.yaml.example $DATA_DIR/config.yaml
-python -m uvicorn main:app --reload --port 8080
-```
-
-### Run Tests
-
-```bash
-pytest tests/
-```
-
-## Logs
-
-View logs with Docker:
-
-```bash
-docker-compose logs -f ha-print-monitor
-```
-
-Logs include:
-- Startup configuration
-- HA connection status
-- Camera capture events
-- Model analysis results
-- Notifications sent
-- User actions
-- Pause events
-- Errors and warnings
-
-## Roadmap
-
-- [ ] YOLO model integration
-- [ ] Web UI for config management
-- [ ] Historical graph of detections
-- [ ] Telegram/Discord notifications
-- [ ] Manual pause/resume button
-- [ ] Print time/layer prediction
-- [ ] Failure rate statistics
-- [ ] Mobile app
-- [ ] WebSocket live updates
-
-## License
-
-MIT
-
-## Support
-
-Report issues at: (repo)/issues
-
-For Home Assistant help, see: https://www.home-assistant.io/
-
-## Credits
-
-Inspired by Obico (formerly Spaghetti Detective) and developed for Home Assistant integration.
+A Docker Compose file is kept at `docs/dev/docker-compose.yml` for local testing. It is not the recommended installation path and still expects a development `SUPERVISOR_TOKEN` or mock token.

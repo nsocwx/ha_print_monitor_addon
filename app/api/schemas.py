@@ -118,6 +118,7 @@ class ConfigResponse(BaseModel):
     """Response for configuration."""
 
     app_base_url: str
+    external_base_url: Optional[str] = None
     timezone: str
     home_assistant_url: str
     camera_entity: str
@@ -153,6 +154,7 @@ class HealthResponse(BaseModel):
     database: str
     home_assistant: str
     analyzer: str
+    addon: str = "unknown"
     uptime_seconds: float
     app_version: str = "unknown"
     build_date: str = "unknown"

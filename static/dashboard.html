@@ -355,9 +355,8 @@
     </div>
 
     <script>
-        const API_BASE = window.location.origin;
+        const API_BASE = '';
         const SELECTED_PRINTER_KEY = 'haPrintMonitor.selectedPrinterId';
-        const ACTION_TOKEN_KEY = 'haPrintMonitor.actionToken';
         let printers = [];
         let activePrinterId = localStorage.getItem(SELECTED_PRINTER_KEY);
         let configuredTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -869,6 +868,10 @@
                     <span class="status-badge ${classToken(data.analyzer)}">${esc(data.analyzer)}</span>
                 </div>
                 <div class="status-item">
+                    <label>Add-on</label>
+                    <span class="status-badge ${classToken(data.addon || 'unknown')}">${esc(data.addon || 'unknown')}</span>
+                </div>
+                <div class="status-item">
                     <label>Version</label>
                     <span class="value">${esc(data.app_version || 'unknown')} (${esc(data.git_commit || 'unknown')})</span>
                 </div>
@@ -883,9 +886,9 @@
             const printer = data.selected_printer || {};
             const pauseService = printer.pause_service || {};
             document.getElementById('config-content').innerHTML = `
-                <div class="status-item"><label>App Base URL</label><span class="value">${esc(data.app_base_url)}</span></div>
+                <div class="status-item"><label>External Base URL</label><span class="value">${esc(data.external_base_url || 'Not configured')}</span></div>
                 <div class="status-item"><label>Timezone</label><span class="value">${esc(data.timezone)}</span></div>
-                <div class="status-item"><label>Home Assistant URL</label><span class="value">${esc(data.home_assistant_url)}</span></div>
+                <div class="status-item"><label>Home Assistant API</label><span class="value">${esc(data.home_assistant_url)}</span></div>
                 <div class="status-item"><label>Selected Printer</label><span class="value">${esc(printer.name || 'Unknown')}</span></div>
                 <div class="status-item"><label>Camera Entity</label><span class="value">${esc(printer.camera_entity || data.camera_entity)}</span></div>
                 <div class="status-item"><label>Printer State Entity</label><span class="value">${esc(printer.printer_state_entity || data.printer_state_entity)}</span></div>
@@ -902,27 +905,14 @@
             `;
         }
 
-        function getActionToken() {
-            let token = localStorage.getItem(ACTION_TOKEN_KEY);
-            if (!token) {
-                token = prompt('Enter dashboard action token');
-                if (token) localStorage.setItem(ACTION_TOKEN_KEY, token);
-            }
-            return token;
-        }
-
         async function runEventAction(action, eventId) {
-            const operatorToken = getActionToken();
-            if (!operatorToken) return;
             const tokenParams = new URLSearchParams({
                 event_id: eventId,
                 action,
-                operator_token: operatorToken,
             });
             const tokenResp = await fetch(`${API_BASE}/api/actions/token?${tokenParams.toString()}`, { method: 'POST' });
             if (tokenResp.status === 401) {
-                localStorage.removeItem(ACTION_TOKEN_KEY);
-                alert('Invalid operator token.');
+                alert('Could not create action token.');
                 return;
             }
             if (!tokenResp.ok) {
@@ -938,7 +928,6 @@
             }
             const resp = await fetch(`${API_BASE}${path}?${params.toString()}`, { method: 'POST' });
             if (resp.status === 401) {
-                localStorage.removeItem(ACTION_TOKEN_KEY);
                 alert('Invalid action token.');
                 return;
             }

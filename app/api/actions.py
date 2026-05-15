@@ -33,11 +33,6 @@ def get_app_config() -> AppConfig:
     return load_config()
 
 
-def _verify_operator_token(operator_token: str, config: AppConfig):
-    if operator_token != config.security.action_token:
-        raise HTTPException(status_code=401, detail="Invalid operator token")
-
-
 def _consume_action_token(
     action: str,
     token: str,
@@ -64,12 +59,10 @@ def _consume_action_token(
 def create_dashboard_action_token(
     event_id: str = Query(...),
     action: str = Query(...),
-    operator_token: str = Query(...),
     session: Session = Depends(get_session),
     config: AppConfig = Depends(get_app_config),
 ) -> TokenResponse:
-    """Create a one-time action token for trusted dashboard operators."""
-    _verify_operator_token(operator_token, config)
+    """Create a short-lived one-time action token for the ingress dashboard."""
     if action not in PROTECTED_ACTIONS:
         raise HTTPException(status_code=400, detail="Unsupported action")
 
@@ -89,12 +82,9 @@ def create_dashboard_action_token(
 @router.post("/test-notification", response_model=ActionResponse)
 async def send_test_notification(
     printer_id: Optional[str] = Query(None),
-    operator_token: Optional[str] = Query(None),
     config: AppConfig = Depends(get_app_config),
 ) -> ActionResponse:
     """Send a safe test notification through the selected printer route."""
-    if operator_token:
-        _verify_operator_token(operator_token, config)
     printer = config.get_printer(printer_id) if printer_id else config.get_printers()[0]
     if not printer:
         raise HTTPException(status_code=404, detail="Printer not found")

@@ -1,0 +1,16 @@
+services:
+  ha-print-monitor-addon-dev:
+    build:
+      context: ../..
+    container_name: ha-print-monitor-addon-dev
+    ports:
+      - "${APP_PORT:-8080}:8080"
+    volumes:
+      - ../../data:/data
+    environment:
+      DATA_DIR: /data
+      OPTIONS_PATH: /data/options.json
+      SUPERVISOR_TOKEN: ${SUPERVISOR_TOKEN:?Set a development-only Supervisor token or mock token}
+      ACTION_SIGNING_SECRET: ${ACTION_SIGNING_SECRET:-dev-only-action-signing-secret}
+      FORWARDED_HEADERS: "true"
+    restart: unless-stopped

@@ -1,6 +1,5 @@
 """Test configuration loading."""
 import pytest
-import yaml
 from pathlib import Path
 from app.core.config import AppConfig, load_config, save_config
 
@@ -8,7 +7,7 @@ from app.core.config import AppConfig, load_config, save_config
 def test_load_config_defaults():
     """Test loading config with defaults."""
     config = AppConfig()
-    assert config.app_base_url == "http://localhost:8080"
+    assert config.app_base_url == ""
     assert config.monitoring.enabled is True
     assert config.monitoring.frame_interval_seconds == 30
 
@@ -16,11 +15,10 @@ def test_load_config_defaults():
 def test_config_serialization():
     """Test config can be serialized."""
     config = AppConfig()
-    config.home_assistant.url = "http://ha.example.com"
-    config.home_assistant.token = "test-token"
-    
-    assert config.home_assistant.url == "http://ha.example.com"
-    assert config.home_assistant.token == "test-token"
+    config.external_base_url = "https://example.ui"
+
+    assert config.home_assistant.url == "http://supervisor/core/api"
+    assert config.external_base_url == "https://example.ui"
 
 
 def test_pause_service_config():
@@ -50,6 +48,6 @@ def test_monitoring_thresholds():
 def test_security_config():
     """Test security configuration."""
     config = AppConfig()
-    config.security.action_token = "test-token-123"
+    config.security.action_token_expiration_hours = 12
     
-    assert config.security.action_token == "test-token-123"
+    assert config.security.action_token_ttl_hours == 12

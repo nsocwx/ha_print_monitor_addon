@@ -500,22 +500,12 @@ class PrintMonitorService:
             for notify_service in notify_services:
                 from app.security import create_action_token
 
-                # Construct action URLs
+                # Construct external notification links only when the user supplied
+                # a reachable public base URL. Never log these full URLs.
                 pause_token = create_action_token(self.config, event.event_id, "pause", event.printer_id)
                 ignore_token = create_action_token(self.config, event.event_id, "ignore", event.printer_id)
                 snooze_token = create_action_token(self.config, event.event_id, "snooze", event.printer_id)
-                pause_url = (
-                    f"{self.config.app_base_url}/api/actions/pause"
-                    f"?token={pause_token}"
-                )
-                ignore_url = (
-                    f"{self.config.app_base_url}/api/actions/ignore"
-                    f"?token={ignore_token}"
-                )
-                snooze_url = (
-                    f"{self.config.app_base_url}/api/actions/snooze"
-                    f"?token={snooze_token}&minutes={self.config.monitoring.snooze_minutes}"
-                )
+                external_base_url = (self.config.external_base_url or "").rstrip("/")
 
                 # Build notification data
                 title = f"Possible Print Issue Detected: {self.printer_name}"
@@ -533,14 +523,31 @@ class PrintMonitorService:
                         f"\n\nAuto-pause in {time_remaining:.0f} minutes unless ignored."
                     )
 
-                data = {
-                    "image": f"{self.config.app_base_url}/captures/{Path(event.image_path).name}",
-                    "actions": [
-                        {"action": "URI", "title": "Pause Print", "uri": pause_url},
-                        {"action": "URI", "title": "Ignore", "uri": ignore_url},
-                        {"action": "URI", "title": f"Snooze {self.config.monitoring.snooze_minutes}m", "uri": snooze_url},
-                    ],
-                }
+                data = {}
+                if external_base_url:
+                    data = {
+                        "image": f"{external_base_url}/captures/{Path(event.image_path).name}",
+                        "actions": [
+                            {
+                                "action": "URI",
+                                "title": "Pause Print",
+                                "uri": f"{external_base_url}/api/actions/pause?token={pause_token}",
+                            },
+                            {
+                                "action": "URI",
+                                "title": "Ignore",
+                                "uri": f"{external_base_url}/api/actions/ignore?token={ignore_token}",
+                            },
+                            {
+                                "action": "URI",
+                                "title": f"Snooze {self.config.monitoring.snooze_minutes}m",
+                                "uri": (
+                                    f"{external_base_url}/api/actions/snooze"
+                                    f"?token={snooze_token}&minutes={self.config.monitoring.snooze_minutes}"
+                                ),
+                            },
+                        ],
+                    }
 
                 await self.ha_service.send_notification(
                     service=notify_service,
@@ -549,7 +556,7 @@ class PrintMonitorService:
                     data=data,
                 )
 
-                logger.info(f"Notification sent via {notify_service}")
+                logger.info("Notification sent via %s for event %s", notify_service, event.event_id)
 
         except Exception as e:
             logger.error(f"Failed to send notification: {e}")

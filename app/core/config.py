@@ -1,17 +1,21 @@
-"""Configuration management for HA Print Monitor."""
+"""Configuration management for the Home Assistant add-on."""
+import json
 import os
+import hashlib
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 import logging
 
-from pydantic import Field, HttpUrl, field_validator
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings
-import yaml
 
 logger = logging.getLogger(__name__)
 
 DATA_DIR = Path(os.getenv("DATA_DIR", "/data"))
-CONFIG_FILE = Path(os.getenv("CONFIG_PATH", str(DATA_DIR / "config.yaml")))
+OPTIONS_FILE = Path(os.getenv("OPTIONS_PATH", str(DATA_DIR / "options.json")))
+CONFIG_FILE = OPTIONS_FILE
+HA_API_URL = "http://supervisor/core/api"
+HA_WS_URL = "ws://supervisor/core/websocket"
 
 
 class PauseServiceConfig(BaseSettings):
@@ -23,9 +27,10 @@ class PauseServiceConfig(BaseSettings):
 
 
 class HomeAssistantConfig(BaseSettings):
-    """Configuration for Home Assistant integration."""
-    url: str = "http://localhost:8123"
-    token: str = ""
+    """Supervisor-provided Home Assistant integration settings."""
+    url: str = HA_API_URL
+    websocket_url: str = HA_WS_URL
+    token: str = Field(default="", repr=False)
     camera_entity: str = "camera.printer"
     printer_state_entity: str = "sensor.printer_status"
     printing_states: List[str] = ["printing"]
@@ -36,6 +41,7 @@ class HomeAssistantConfig(BaseSettings):
 class PrinterConfig(BaseSettings):
     """Configuration for one monitored printer."""
     id: str = "default"
+    printer_id: Optional[str] = None
     name: str = "Default Printer"
     enabled: bool = True
     camera_entity: str = "camera.printer"
@@ -107,9 +113,12 @@ class ModelConfig(BaseSettings):
 
 class SecurityConfig(BaseSettings):
     """Configuration for security."""
-    action_token: str = "change-me-in-production"
     action_signing_secret: str = "change-me-to-a-long-random-signing-secret"
-    action_token_ttl_hours: int = 24
+    action_token_expiration_hours: int = 24
+
+    @property
+    def action_token_ttl_hours(self) -> int:
+        return self.action_token_expiration_hours
 
 
 class RetentionConfig(BaseSettings):
@@ -135,7 +144,8 @@ class ProxyConfig(BaseSettings):
 
 class AppConfig(BaseSettings):
     """Main application configuration."""
-    app_base_url: str = "http://localhost:8080"
+    app_base_url: str = ""
+    external_base_url: Optional[str] = None
     timezone: str = "UTC"
     home_assistant: HomeAssistantConfig = Field(default_factory=HomeAssistantConfig)
     printers: List[PrinterConfig] = Field(default_factory=list)
@@ -147,6 +157,7 @@ class AppConfig(BaseSettings):
     security: SecurityConfig = Field(default_factory=SecurityConfig)
     retention: RetentionConfig = Field(default_factory=RetentionConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
+    advanced: LoggingConfig = Field(default_factory=LoggingConfig)
     proxy: ProxyConfig = Field(default_factory=ProxyConfig)
 
     class Config:
@@ -164,6 +175,14 @@ class AppConfig(BaseSettings):
     def load_printers_config(cls, v):
         if isinstance(v, list):
             return [PrinterConfig(**printer) if isinstance(printer, dict) else printer for printer in v]
+        return v
+
+    @field_validator("printers")
+    @classmethod
+    def normalize_printer_ids(cls, v):
+        for printer in v:
+            if printer.printer_id:
+                printer.id = printer.printer_id
         return v
 
     @field_validator("monitoring", mode="before")
@@ -255,38 +274,37 @@ class AppConfig(BaseSettings):
 
 
 def load_config() -> AppConfig:
-    """Load configuration from YAML file and environment variables."""
-    # Create data directory if needed
+    """Load add-on options from /data/options.json and SUPERVISOR_TOKEN."""
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-    CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    OPTIONS_FILE.parent.mkdir(parents=True, exist_ok=True)
 
     config_dict = {}
 
-    # Load YAML config if exists
-    if CONFIG_FILE.exists():
-        logger.info(f"Loading config from {CONFIG_FILE}")
+    if OPTIONS_FILE.exists():
+        logger.info("Loading Home Assistant add-on options from %s", OPTIONS_FILE)
         try:
-            with open(CONFIG_FILE, "r") as f:
-                config_dict = yaml.safe_load(f) or {}
+            with open(OPTIONS_FILE, "r", encoding="utf-8") as f:
+                config_dict = json.load(f) or {}
         except Exception as e:
-            logger.error(f"Error loading config file: {e}")
+            logger.error("Error loading add-on options: %s", redact_sensitive(str(e)))
             config_dict = {}
 
-    # Create AppConfig with merged env vars and file config
     config = AppConfig(**config_dict)
+    config.logging = config.advanced
+    config.home_assistant.url = HA_API_URL
+    config.home_assistant.websocket_url = HA_WS_URL
 
-    # Override with environment variables
-    if url := os.getenv("HA_URL"):
-        config.home_assistant.url = url
-    if token := os.getenv("HA_TOKEN"):
-        config.home_assistant.token = token
-    if camera := os.getenv("HA_CAMERA_ENTITY"):
-        config.home_assistant.camera_entity = camera
-    if state_entity := os.getenv("HA_PRINTER_STATE_ENTITY"):
-        config.home_assistant.printer_state_entity = state_entity
-
-    if app_url := os.getenv("APP_BASE_URL"):
-        config.app_base_url = app_url
+    supervisor_token = os.getenv("SUPERVISOR_TOKEN")
+    if not supervisor_token:
+        raise RuntimeError(
+            "SUPERVISOR_TOKEN is missing. This application must run as a "
+            "Home Assistant add-on with homeassistant_api enabled."
+        )
+    config.home_assistant.token = supervisor_token
+    if config.security.action_signing_secret.startswith("change-me"):
+        config.security.action_signing_secret = hashlib.sha256(
+            supervisor_token.encode("utf-8")
+        ).hexdigest()
 
     if monitoring_enabled := os.getenv("MONITORING_ENABLED"):
         config.monitoring.enabled = monitoring_enabled.lower() in ("true", "1", "yes")
@@ -296,9 +314,6 @@ def load_config() -> AppConfig:
             config.monitoring.frame_interval_seconds = int(frame_interval)
         except ValueError:
             logger.warning(f"Invalid FRAME_INTERVAL_SECONDS: {frame_interval}")
-
-    if action_token := os.getenv("ACTION_TOKEN"):
-        config.security.action_token = action_token
 
     if signing_secret := os.getenv("ACTION_SIGNING_SECRET"):
         config.security.action_signing_secret = signing_secret
@@ -315,119 +330,14 @@ def load_config() -> AppConfig:
     return config
 
 
+def redact_sensitive(value: str) -> str:
+    """Redact the supervisor token from strings before logging or diagnostics."""
+    token = os.getenv("SUPERVISOR_TOKEN")
+    if token:
+        value = value.replace(token, "[REDACTED]")
+    return value
+
+
 def save_config(config: AppConfig) -> None:
-    """Save configuration to YAML file."""
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    
-    config_dict = {
-        "app_base_url": config.app_base_url,
-        "timezone": config.timezone,
-        "home_assistant": {
-            "url": config.home_assistant.url,
-            "token": config.home_assistant.token,
-            "camera_entity": config.home_assistant.camera_entity,
-            "printer_state_entity": config.home_assistant.printer_state_entity,
-            "printing_states": config.home_assistant.printing_states,
-            "pause_service": {
-                "domain": config.home_assistant.pause_service.domain,
-                "service": config.home_assistant.pause_service.service,
-                "target": config.home_assistant.pause_service.target,
-                "data": config.home_assistant.pause_service.data,
-            },
-            "notify_services": config.home_assistant.notify_services,
-        },
-        "printers": [
-            {
-                "id": printer.id,
-                "name": printer.name,
-                "enabled": printer.enabled,
-                "camera_entity": printer.camera_entity,
-                "printer_state_entity": printer.printer_state_entity,
-                "printing_states": printer.printing_states,
-                "pause_service": {
-                    "domain": printer.pause_service.domain,
-                    "service": printer.pause_service.service,
-                    "target": printer.pause_service.target,
-                    "data": printer.pause_service.data,
-                },
-                "notify_services": printer.notify_services,
-                "certainty_threshold_notify": printer.certainty_threshold_notify,
-                "certainty_threshold_auto_pause": printer.certainty_threshold_auto_pause,
-            }
-            for printer in config.printers
-        ],
-        "monitoring": {
-            "enabled": config.monitoring.enabled,
-            "frame_interval_seconds": config.monitoring.frame_interval_seconds,
-            "confirmation_frames": config.monitoring.confirmation_frames,
-            "certainty_threshold_notify": config.monitoring.certainty_threshold_notify,
-            "auto_pause_enabled": config.monitoring.auto_pause_enabled,
-            "certainty_threshold_auto_pause": config.monitoring.certainty_threshold_auto_pause,
-            "auto_pause_delay_minutes": config.monitoring.auto_pause_delay_minutes,
-            "cooldown_minutes": config.monitoring.cooldown_minutes,
-            "snooze_minutes": config.monitoring.snooze_minutes,
-            "min_analysis_interval_seconds": config.monitoring.min_analysis_interval_seconds,
-            "confirmation_window_minutes": config.monitoring.confirmation_window_minutes,
-            "required_issue_consistency": config.monitoring.required_issue_consistency,
-        },
-        "safety": {
-            "require_recent_frame_seconds": config.safety.require_recent_frame_seconds,
-            "require_printer_still_printing": config.safety.require_printer_still_printing,
-            "require_issue_reconfirmation_before_pause": (
-                config.safety.require_issue_reconfirmation_before_pause
-            ),
-            "prevent_duplicate_pause": config.safety.prevent_duplicate_pause,
-        },
-        "camera": {
-            "stale_after_seconds": config.camera.stale_after_seconds,
-            "capture_timeout_seconds": config.camera.capture_timeout_seconds,
-            "retry_count": config.camera.retry_count,
-            "retry_backoff_seconds": config.camera.retry_backoff_seconds,
-            "fallback_snapshot_url": config.camera.fallback_snapshot_url,
-        },
-        "notifications": {
-            "enabled": config.notifications.enabled,
-            "quiet_hours_enabled": config.notifications.quiet_hours_enabled,
-            "quiet_hours_start": config.notifications.quiet_hours_start,
-            "quiet_hours_end": config.notifications.quiet_hours_end,
-            "notify_on_low": config.notifications.notify_on_low,
-            "notify_on_medium": config.notifications.notify_on_medium,
-            "notify_on_high": config.notifications.notify_on_high,
-            "notify_on_critical": config.notifications.notify_on_critical,
-        },
-        "model": {
-            "provider": config.model.provider,
-            "model_path": config.model.model_path,
-            "options_path": config.model.options_path,
-            "prototypes_path": config.model.prototypes_path,
-            "auto_download": config.model.auto_download,
-            "models_dir": config.model.models_dir,
-            "device": config.model.device,
-            "max_inference_timeout_seconds": config.model.max_inference_timeout_seconds,
-        },
-        "security": {
-            "action_token": config.security.action_token,
-            "action_signing_secret": config.security.action_signing_secret,
-            "action_token_ttl_hours": config.security.action_token_ttl_hours,
-        },
-        "retention": {
-            "keep_images_days": config.retention.keep_images_days,
-            "keep_events_days": config.retention.keep_events_days,
-            "keep_clear_captures_hours": config.retention.keep_clear_captures_hours,
-            "keep_event_captures_days": config.retention.keep_event_captures_days,
-            "max_capture_storage_mb": config.retention.max_capture_storage_mb,
-        },
-        "logging": {
-            "json_logs": config.logging.json_logs,
-            "log_level": config.logging.log_level,
-        },
-        "proxy": {
-            "forwarded_headers": config.proxy.forwarded_headers,
-            "trusted_hosts": config.proxy.trusted_hosts,
-        },
-    }
-
-    with open(CONFIG_FILE, "w") as f:
-        yaml.dump(config_dict, f, default_flow_style=False)
-
-    logger.info(f"Configuration saved to {CONFIG_FILE}")
+    """Configuration is managed by Home Assistant add-on options."""
+    raise RuntimeError("Configuration is managed by /data/options.json")
