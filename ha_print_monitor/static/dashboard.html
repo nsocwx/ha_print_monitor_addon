@@ -355,7 +355,12 @@
     </div>
 
     <script>
-        const API_BASE = '';
+        function getIngressBase() {
+            const path = window.location.pathname.replace(/\/$/, '');
+            return path === '' ? '' : path;
+        }
+
+        const API_BASE = getIngressBase();
         const SELECTED_PRINTER_KEY = 'haPrintMonitor.selectedPrinterId';
         let printers = [];
         let activePrinterId = localStorage.getItem(SELECTED_PRINTER_KEY);
@@ -430,8 +435,45 @@
             return `${API_BASE}/captures/${encodeURIComponent(path.split(/[\\/]/).pop())}`;
         }
 
+        function renderLoadError(error) {
+            const message = error?.message || String(error || 'Unknown error');
+            document.getElementById('operator-banner').innerHTML = `
+                <div class="banner-item">
+                    <label>Dashboard</label>
+                    <strong class="severity-high">Unable to load add-on API</strong>
+                </div>
+                <div class="banner-item">
+                    <label>Request Base</label>
+                    <strong>${esc(API_BASE || '/')}</strong>
+                </div>
+                <div class="banner-item">
+                    <label>Error</label>
+                    <strong>${esc(message)}</strong>
+                </div>
+            `;
+            const panels = [
+                'status-content',
+                'snapshot-content',
+                'latest-analysis-content',
+                'camera-health-content',
+                'event-content',
+                'health-content',
+                'print-protection-content',
+                'analysis-timeline-content',
+                'events-content',
+                'config-content',
+            ];
+            panels.forEach((id) => {
+                const element = document.getElementById(id);
+                if (element && !element.innerHTML) {
+                    element.innerHTML = '<p class="muted">Waiting for add-on API data...</p>';
+                }
+            });
+        }
+
         async function loadPrinters() {
             const resp = await fetch(`${API_BASE}/api/printers`);
+            if (!resp.ok) throw new Error(`Failed to load printers (${resp.status})`);
             printers = await resp.json();
             if (!printers.some((printer) => printer.printer_id === activePrinterId)) {
                 activePrinterId = printers[0]?.printer_id || null;
@@ -467,14 +509,14 @@
 
         async function fetchStatusOnce() {
             const resp = await fetch(`${API_BASE}/api/status${printerQuery()}`);
-            if (!resp.ok) throw new Error('Failed to load status');
+            if (!resp.ok) throw new Error(`Failed to load status (${resp.status})`);
             lastStatus = await resp.json();
             return lastStatus;
         }
 
         async function loadConfig() {
             const resp = await fetch(`${API_BASE}/api/config${printerQuery()}`);
-            if (!resp.ok) throw new Error('Failed to load config');
+            if (!resp.ok) throw new Error(`Failed to load config (${resp.status})`);
             const data = await resp.json();
             lastConfig = data;
             configuredTimeZone = data.timezone || configuredTimeZone;
@@ -484,13 +526,13 @@
 
         async function loadHealth() {
             const resp = await fetch(`${API_BASE}/health`);
-            if (!resp.ok) throw new Error('Failed to load health');
+            if (!resp.ok) throw new Error(`Failed to load health (${resp.status})`);
             renderHealth(await resp.json());
         }
 
         async function loadEvents() {
             const resp = await fetch(`${API_BASE}/api/events?${eventsQuery(10)}`);
-            if (!resp.ok) throw new Error('Failed to load events');
+            if (!resp.ok) throw new Error(`Failed to load events (${resp.status})`);
             renderEvents(await resp.json());
         }
 
@@ -498,7 +540,7 @@
             const params = new URLSearchParams({ limit: '8' });
             if (activePrinterId) params.set('printer_id', activePrinterId);
             const resp = await fetch(`${API_BASE}/api/analysis/recent?${params.toString()}`);
-            if (!resp.ok) throw new Error('Failed to load analysis timeline');
+            if (!resp.ok) throw new Error(`Failed to load analysis timeline (${resp.status})`);
             renderAnalysisTimeline(await resp.json());
         }
 
@@ -568,7 +610,10 @@
         function renderSnapshot(status) {
             const container = document.getElementById('snapshot-content');
             if (!status.last_capture_image_url) {
-                container.innerHTML = '<div class="snapshot-empty">No camera capture yet</div>';
+                const detail = status.last_capture_error
+                    ? `<p class="muted" style="margin-top:0.6rem;">${esc(status.last_capture_error)}</p>`
+                    : '';
+                container.innerHTML = `<div class="snapshot-empty"><div>No camera capture yet${detail}</div></div>`;
                 return;
             }
             const url = `${API_BASE}${status.last_capture_image_url}?t=${Date.now()}`;
@@ -644,6 +689,12 @@
                     <label>Failed Captures</label>
                     <span class="value">${Number(status.capture_failure_count || 0)}</span>
                 </div>
+                ${status.last_capture_error ? `
+                    <div class="status-item">
+                        <label>Last Error</label>
+                        <span class="value">${esc(status.last_capture_error)}</span>
+                    </div>
+                ` : ''}
             `;
         }
 
@@ -1025,6 +1076,7 @@
                 await Promise.all([loadHealth(), loadEvents(), loadAnalysisTimeline()]);
             } catch (e) {
                 console.error(e);
+                renderLoadError(e);
             } finally {
                 refreshInFlight = false;
             }

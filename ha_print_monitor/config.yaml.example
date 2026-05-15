@@ -102,7 +102,7 @@ camera:
   capture_timeout_seconds: 15
   retry_count: 2
   retry_backoff_seconds: 3
-  fallback_snapshot_url: null
+  fallback_snapshot_url: ""
 
 notifications:
   enabled: true

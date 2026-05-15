@@ -1,7 +1,7 @@
 name: "HA Print Monitor"
 slug: "ha_print_monitor"
 description: "Monitor 3D prints with Home Assistant cameras, model analysis, notifications, and safe pause actions."
-version: "0.3.5"
+version: "0.3.6"
 arch:
   - amd64
   - aarch64
@@ -50,6 +50,7 @@ options:
     capture_timeout_seconds: 15
     retry_count: 2
     retry_backoff_seconds: 3
+    fallback_snapshot_url: ""
   retention:
     keep_clear_captures_hours: 24
     keep_event_captures_days: 30
@@ -92,6 +93,7 @@ schema:
     capture_timeout_seconds: int
     retry_count: int
     retry_backoff_seconds: int
+    fallback_snapshot_url: str
   retention:
     keep_clear_captures_hours: int
     keep_event_captures_days: int
