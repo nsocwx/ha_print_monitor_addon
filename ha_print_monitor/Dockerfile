@@ -1,6 +1,6 @@
 FROM python:3.12-slim
 
-ARG BUILD_VERSION=0.3.1
+ARG BUILD_VERSION=0.3.2
 ARG BUILD_ARCH
 
 LABEL \
@@ -26,14 +26,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application
 COPY . .
 
-# Create writable runtime directories and non-root user
-RUN groupadd --system app && \
-    useradd --system --gid app --home /app app && \
-    mkdir -p /data/captures /data/logs /data/backups /data/models && \
-    chmod +x /app/run.sh && \
-    chown -R app:app /app /data
-
-USER app
+# Home Assistant mounts /data at runtime. Run as root so the add-on can create
+# and write its runtime directories inside that Supervisor-managed volume.
+RUN mkdir -p /data/captures /data/logs /data/backups /data/models && \
+    chmod +x /app/run.sh
 
 # Internal ingress port. No public add-on port is exposed in config.yaml.
 EXPOSE 8080
