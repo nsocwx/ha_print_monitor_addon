@@ -3,6 +3,8 @@ import logging
 import asyncio
 import uuid
 import json
+import time
+import httpx
 from io import BytesIO
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -25,12 +27,20 @@ CAPTURES_DIR = DATA_DIR / "captures"
 class PrintMonitorService:
     """Service for monitoring 3D prints."""
 
+    ACTIVE_PRINTING_STATE_PREFIXES = ("printing",)
+
     def __init__(self, config: AppConfig, printer: Optional[PrinterConfig] = None):
         self.config = config
         self.printer = printer or config.get_printers()[0]
         self.printer_id = self.printer.id
         self.printer_name = self.printer.name
-        self.ha_service = HAService(config.home_assistant.url, config.home_assistant.token)
+        self.ha_service = HAService(
+            config.home_assistant.url,
+            config.home_assistant.token,
+            timeout_seconds=config.camera.capture_timeout_seconds,
+            retry_count=config.camera.retry_count,
+            retry_backoff_seconds=config.camera.retry_backoff_seconds,
+        )
         self.analyzer = AnalyzerFactory.create_analyzer(
             config.model.provider,
             config.model.model_path,
@@ -47,8 +57,14 @@ class PrintMonitorService:
         self.last_capture_path: Optional[Path] = None
         self.last_capture_status: str = "no_capture"
         self.last_capture_error: Optional[str] = None
+        self.capture_success_count = 0
+        self.capture_failure_count = 0
+        self.last_successful_capture_time: Optional[datetime] = None
         self.last_analysis_time: Optional[datetime] = None
         self.last_analysis_result: Optional[dict] = None
+        self.last_analysis_error: Optional[str] = None
+        self.last_inference_duration_ms: Optional[float] = None
+        self.model_status = "initialized" if self.analyzer.initialized else "uninitialized"
         self.printer_state: Optional[str] = None
         self.active_event_id: Optional[str] = None
         self.pending_detection_count = 0
@@ -77,19 +93,24 @@ class PrintMonitorService:
         """Run one monitoring cycle."""
         if not self.config.monitoring.enabled or not self.running:
             return
+        if not self.printer.enabled:
+            return
 
         try:
+            if self._analysis_interval_active():
+                return
+
             # Get printer state
             state_entity = self.printer.printer_state_entity
             state_response = await self.ha_service.get_state(state_entity)
             current_state = state_response.get("state", "unknown")
             self.printer_state = current_state
 
-            # Check if printer is printing
-            is_printing = current_state in self.printer.printing_states
+            # Only capture/analyze while the printer is actively printing.
+            is_printing = self.is_printer_printing(current_state)
 
             if not is_printing:
-                # Not printing, skip analysis
+                # Not printing, skip camera capture and analysis.
                 if self.active_event_id:
                     logger.info("Printer stopped, resolving active event")
                     await self._resolve_event(self.active_event_id)
@@ -103,19 +124,41 @@ class PrintMonitorService:
                 )
                 image_data = self._validate_camera_image(camera_image)
             except Exception as e:
-                self.last_capture_status = "error"
-                self.last_capture_error = str(e)
-                logger.error(f"Failed to capture image for {self.printer_name}: {e}")
-                return
+                if self.config.camera.fallback_snapshot_url:
+                    try:
+                        image_data = await self._capture_fallback_snapshot()
+                    except Exception as fallback_error:
+                        self._record_capture_failure(
+                            f"{e}; fallback failed: {fallback_error}"
+                        )
+                        logger.error(
+                            "Failed to capture image for %s: %s; fallback failed: %s",
+                            self.printer_name,
+                            e,
+                            fallback_error,
+                        )
+                        return
+                else:
+                    self._record_capture_failure(str(e))
+                    logger.error(f"Failed to capture image for {self.printer_name}: {e}")
+                    return
 
             # Save capture
             capture_id = f"capture_{self.printer_id}_{uuid.uuid4().hex[:8]}"
             capture_path = CAPTURES_DIR / f"{capture_id}.jpg"
-            capture_path.write_bytes(image_data)
+            try:
+                capture_path.write_bytes(image_data)
+            except OSError as e:
+                self._record_capture_failure(f"failed to save capture: {e}")
+                logger.error("Failed to save capture for %s: %s", self.printer_name, e)
+                return
             self.last_capture_time = datetime.utcnow()
             self.last_capture_path = capture_path
             self.last_capture_status = "ok"
             self.last_capture_error = None
+            self.last_successful_capture_time = self.last_capture_time
+            self.capture_success_count += 1
+            self._store_camera_capture(capture_id, capture_path)
 
             # Analyze frame
             context = AnalysisContext(
@@ -123,9 +166,23 @@ class PrintMonitorService:
                 printer_attributes=state_response.get("attributes", {}),
             )
 
-            result = await self.analyzer.analyze_frame(image_data, context)
+            try:
+                start = time.perf_counter()
+                result = await asyncio.wait_for(
+                    self.analyzer.analyze_frame(image_data, context),
+                    timeout=max(1, self.config.model.max_inference_timeout_seconds),
+                )
+                self.last_inference_duration_ms = (time.perf_counter() - start) * 1000
+                self.last_analysis_error = None
+                self.model_status = "healthy"
+            except Exception as e:
+                self.last_analysis_error = str(e)
+                self.model_status = "degraded"
+                logger.error("Analysis failed for %s: %s", self.printer_name, e)
+                return
             self.last_analysis_time = datetime.utcnow()
             self.last_analysis_result = result.to_dict()
+            self.last_analysis_result["inference_duration_ms"] = self.last_inference_duration_ms
             self._store_analysis_result(result, capture_path)
 
             logger.debug(f"Analysis result: {result.to_dict()}")
@@ -146,6 +203,34 @@ class PrintMonitorService:
 
         except Exception as e:
             logger.error(f"Error in monitoring cycle: {e}")
+
+    def _analysis_interval_active(self) -> bool:
+        minimum = max(0, self.config.monitoring.min_analysis_interval_seconds)
+        if not minimum or not self.last_analysis_time:
+            return False
+        return (datetime.utcnow() - self.last_analysis_time).total_seconds() < minimum
+
+    def is_printer_printing(self, state: Optional[str] = None) -> bool:
+        """Return true only for configured states that represent active printing."""
+        normalized_state = self._normalize_printer_state(
+            self.printer_state if state is None else state
+        )
+        if not normalized_state:
+            return False
+
+        configured_states = {
+            self._normalize_printer_state(configured_state)
+            for configured_state in self.printer.printing_states
+        }
+        if normalized_state not in configured_states:
+            return False
+
+        return normalized_state.startswith(self.ACTIVE_PRINTING_STATE_PREFIXES)
+
+    @staticmethod
+    def _normalize_printer_state(state: Optional[str]) -> str:
+        """Normalize Home Assistant printer states for conservative comparisons."""
+        return (state or "").strip().lower()
 
     def _confirm_detection(self, result) -> bool:
         """Track consecutive matching detections before acting."""
@@ -191,6 +276,49 @@ class PrintMonitorService:
 
         return content
 
+    def _record_capture_failure(self, message: str):
+        """Track capture failure without clearing the last valid snapshot."""
+        self.last_capture_status = "error"
+        self.last_capture_error = message
+        self.capture_failure_count += 1
+
+    async def _capture_fallback_snapshot(self) -> bytes:
+        """Fetch a fallback snapshot URL when HA camera proxy fails."""
+        async with httpx.AsyncClient(timeout=self.config.camera.capture_timeout_seconds) as client:
+            response = await client.get(self.config.camera.fallback_snapshot_url)
+            response.raise_for_status()
+
+        class FallbackImage:
+            content = response.content
+            content_type = response.headers.get("content-type", "")
+
+        return self._validate_camera_image(FallbackImage())
+
+    def camera_is_stale(self) -> bool:
+        """Return true when no recent valid camera image has been captured."""
+        if not self.last_successful_capture_time:
+            return True
+        age = (datetime.utcnow() - self.last_successful_capture_time).total_seconds()
+        return age > self.config.camera.stale_after_seconds
+
+    def _store_camera_capture(self, capture_id: str, capture_path: Path):
+        """Persist capture metadata for retention and diagnostics."""
+        session = SessionLocal()
+        try:
+            capture = CameraCapture(
+                capture_id=capture_id,
+                printer_id=self.printer_id,
+                printer_name=self.printer_name,
+                file_path=str(capture_path),
+                file_size=capture_path.stat().st_size,
+            )
+            session.add(capture)
+            session.commit()
+        except Exception as e:
+            logger.warning("Failed to store camera capture metadata: %s", e)
+        finally:
+            session.close()
+
     def _store_analysis_result(self, result, capture_path: Path):
         """Persist one analyzer result for dashboard history."""
         session = SessionLocal()
@@ -206,6 +334,7 @@ class PrintMonitorService:
                 image_path=str(capture_path),
                 annotated_image_path=result.annotated_image_path,
                 raw_model_output_json=json.dumps(result.raw_model_output, default=str),
+                inference_duration_ms=self.last_inference_duration_ms,
             )
             session.add(analysis)
             session.commit()
@@ -231,10 +360,11 @@ class PrintMonitorService:
                     select(PrinterEvent).where(PrinterEvent.event_id == self.active_event_id)
                 ).first()
 
-                if event and event.status in ("active", "acknowledged"):
+                if event and event.status in ("active", "acknowledged", "pending_pause"):
                     # Same or similar issue - update event
                     event.certainty = max(event.certainty, result.certainty)
                     event.updated_at = datetime.utcnow()
+                    event.last_seen_at = datetime.utcnow()
                     event.add_action(
                         "detection",
                         {
@@ -289,6 +419,7 @@ class PrintMonitorService:
                     minutes=self.config.monitoring.auto_pause_delay_minutes
                 )
                 event.auto_pause_deadline = auto_pause_deadline
+                event.status = "pending_pause"
                 session.add(event)
                 session.commit()
 
@@ -301,10 +432,19 @@ class PrintMonitorService:
 
     async def _send_notification_if_needed(self, event: PrinterEvent, session: Session):
         """Send a notification once certainty reaches the configured threshold."""
+        if not self.config.notifications.enabled:
+            return
+        if not self._notification_allowed_for_severity(event.severity):
+            logger.info("Notification suppressed for %s severity %s", event.event_id, event.severity)
+            return
         if self._notification_already_sent(event):
             return
 
-        notify_threshold = self.config.monitoring.certainty_threshold_notify
+        notify_threshold = (
+            self.printer.certainty_threshold_notify
+            if self.printer.certainty_threshold_notify is not None
+            else self.config.monitoring.certainty_threshold_notify
+        )
         if event.certainty < notify_threshold:
             logger.info(
                 f"Detection {event.event_id} recorded below notification threshold "
@@ -313,6 +453,7 @@ class PrintMonitorService:
             return
 
         await self._send_notification(event, session)
+        event.notification_sent_at = datetime.utcnow()
         event.add_action("notification_sent", {"certainty": event.certainty})
         session.add(event)
         session.commit()
@@ -324,6 +465,11 @@ class PrintMonitorService:
             for action in event.action_history
         )
 
+    def _notification_allowed_for_severity(self, severity: str) -> bool:
+        """Return true when notification config allows this severity."""
+        severity_key = f"notify_on_{(severity or '').lower()}"
+        return bool(getattr(self.config.notifications, severity_key, False))
+
     async def _check_auto_pause(self, event: PrinterEvent, result, session: Session):
         """Check if auto-pause should be triggered."""
         if (
@@ -331,26 +477,18 @@ class PrintMonitorService:
             and self.config.monitoring.auto_pause_enabled
             and datetime.utcnow() >= event.auto_pause_deadline
             and not event.auto_paused
-            and event.status == "active"
+            and event.status in ("active", "pending_pause")
         ):
             logger.warning(f"Auto-pausing print for event {event.event_id}")
 
             try:
-                await self.ha_service.call_service(
-                    domain=self.printer.pause_service.domain,
-                    service=self.printer.pause_service.service,
-                    target={"entity_id": self.printer.pause_service.target},
-                    service_data=self.printer.pause_service.data,
-                )
+                from app.api.actions import _pause_event
 
-                event.auto_paused = True
-                event.auto_pause_at = datetime.utcnow()
-                event.add_action("auto_paused", {})
-                session.add(event)
-                session.commit()
-
-                # Send notification
-                await self._send_auto_pause_notification(event, session)
+                response = await _pause_event(event, self.config, session, auto_pause=True)
+                if response.success:
+                    await self._send_auto_pause_notification(event, session)
+                else:
+                    await self._send_auto_pause_skipped_notification(event, response.message)
 
             except Exception as e:
                 logger.error(f"Failed to auto-pause print: {e}")
@@ -360,20 +498,23 @@ class PrintMonitorService:
         try:
             notify_services = self.printer.notify_services or self.config.home_assistant.notify_services
             for notify_service in notify_services:
-                action_token = self.config.security.action_token
+                from app.security import create_action_token
 
                 # Construct action URLs
+                pause_token = create_action_token(self.config, event.event_id, "pause", event.printer_id)
+                ignore_token = create_action_token(self.config, event.event_id, "ignore", event.printer_id)
+                snooze_token = create_action_token(self.config, event.event_id, "snooze", event.printer_id)
                 pause_url = (
                     f"{self.config.app_base_url}/api/actions/pause"
-                    f"?event_id={event.event_id}&token={action_token}"
+                    f"?token={pause_token}"
                 )
                 ignore_url = (
                     f"{self.config.app_base_url}/api/actions/ignore"
-                    f"?event_id={event.event_id}&token={action_token}"
+                    f"?token={ignore_token}"
                 )
                 snooze_url = (
                     f"{self.config.app_base_url}/api/actions/snooze"
-                    f"?event_id={event.event_id}&token={action_token}&minutes={self.config.monitoring.snooze_minutes}"
+                    f"?token={snooze_token}&minutes={self.config.monitoring.snooze_minutes}"
                 )
 
                 # Build notification data
@@ -435,6 +576,19 @@ class PrintMonitorService:
         except Exception as e:
             logger.error(f"Failed to send auto-pause notification: {e}")
 
+    async def _send_auto_pause_skipped_notification(self, event: PrinterEvent, reason: str):
+        """Send notification that auto-pause was skipped by safety interlocks."""
+        try:
+            notify_services = self.printer.notify_services or self.config.home_assistant.notify_services
+            for notify_service in notify_services:
+                await self.ha_service.send_notification(
+                    service=notify_service,
+                    title=f"Auto-Pause Skipped: {self.printer_name}",
+                    message=f"Auto-pause was skipped for {event.issue_type}: {reason}",
+                )
+        except Exception as e:
+            logger.error("Failed to send auto-pause skipped notification: %s", e)
+
     async def _resolve_event(self, event_id: str):
         """Mark event as resolved."""
         session = SessionLocal()
@@ -445,6 +599,7 @@ class PrintMonitorService:
 
             if event and event.status not in ("resolved", "paused"):
                 event.status = "resolved"
+                event.resolved_at = datetime.utcnow()
                 event.add_action("auto_resolved", {})
                 session.add(event)
                 session.commit()

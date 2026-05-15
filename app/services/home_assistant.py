@@ -1,5 +1,6 @@
 """Home Assistant integration service."""
 import logging
+import asyncio
 import httpx
 from dataclasses import dataclass
 from typing import Optional, Dict, Any, List
@@ -11,6 +12,14 @@ logger = logging.getLogger(__name__)
 class HomeAssistantError(Exception):
     """Base exception for Home Assistant errors."""
     pass
+
+
+class HomeAssistantAuthError(HomeAssistantError):
+    """Raised for Home Assistant authentication failures."""
+
+
+class HomeAssistantNetworkError(HomeAssistantError):
+    """Raised for transient Home Assistant network failures."""
 
 
 @dataclass
@@ -26,7 +35,14 @@ class CameraImage:
 class HAService:
     """Service for interacting with Home Assistant."""
 
-    def __init__(self, url: str, token: str):
+    def __init__(
+        self,
+        url: str,
+        token: str,
+        timeout_seconds: float = 30.0,
+        retry_count: int = 2,
+        retry_backoff_seconds: float = 1.0,
+    ):
         """Initialize HA service.
 
         Args:
@@ -35,6 +51,11 @@ class HAService:
         """
         self.url = url.rstrip("/")
         self.token = token
+        self.timeout_seconds = timeout_seconds
+        self.retry_count = retry_count
+        self.retry_backoff_seconds = retry_backoff_seconds
+        self.last_success_at: Optional[datetime] = None
+        self.last_error: Optional[str] = None
         self.headers = {
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/json",
@@ -45,13 +66,54 @@ class HAService:
     def client(self) -> httpx.Client:
         """Get or create HTTP client."""
         if self._client is None:
-            self._client = httpx.Client(timeout=30.0)
+            self._client = httpx.Client(timeout=self.timeout_seconds)
         return self._client
 
     async def close(self):
         """Close HTTP client."""
         if self._client:
-            await self._client.aclose()
+            self._client.close()
+
+    async def _request(self, method: str, path: str, **kwargs) -> httpx.Response:
+        """Run one HA request with retries for transient failures."""
+        last_exc: Optional[Exception] = None
+        for attempt in range(self.retry_count + 1):
+            try:
+                async with httpx.AsyncClient(
+                    headers=self.headers,
+                    timeout=self.timeout_seconds,
+                    follow_redirects=True,
+                ) as client:
+                    response = await client.request(
+                        method,
+                        f"{self.url}{path}",
+                        headers=self.headers,
+                        **kwargs,
+                    )
+                if response.status_code in (401, 403):
+                    self.last_error = "Home Assistant authentication failed"
+                    raise HomeAssistantAuthError("Home Assistant authentication failed")
+                response.raise_for_status()
+                self.last_success_at = datetime.utcnow()
+                self.last_error = None
+                return response
+            except HomeAssistantAuthError:
+                raise
+            except (httpx.ConnectError, httpx.TimeoutException, httpx.RemoteProtocolError) as exc:
+                last_exc = exc
+                self.last_error = f"Home Assistant network error: {exc}"
+                logger.warning("Transient Home Assistant failure on %s %s: %s", method, path, exc)
+            except httpx.HTTPStatusError as exc:
+                status = exc.response.status_code
+                self.last_error = f"Home Assistant HTTP {status}"
+                if status < 500:
+                    raise HomeAssistantError(f"Home Assistant request failed with HTTP {status}")
+                last_exc = exc
+
+            if attempt < self.retry_count:
+                await asyncio.sleep(self.retry_backoff_seconds * (attempt + 1))
+
+        raise HomeAssistantNetworkError(f"Home Assistant request failed: {last_exc}") from last_exc
 
     async def get_state(self, entity_id: str) -> Dict[str, Any]:
         """Get entity state from Home Assistant.
@@ -65,19 +127,10 @@ class HAService:
         Raises:
             HomeAssistantError: If request fails
         """
-        try:
-            async with httpx.AsyncClient(headers=self.headers, timeout=30.0) as client:
-                resp = await client.get(
-                    f"{self.url}/api/states/{entity_id}",
-                    headers=self.headers
-                )
-                if resp.status_code == 404:
-                    raise HomeAssistantError(f"Entity not found: {entity_id}")
-                resp.raise_for_status()
-                return resp.json()
-        except httpx.HTTPError as e:
-            logger.error(f"Failed to get state for {entity_id}: {e}")
-            raise HomeAssistantError(f"Failed to get state: {e}")
+        resp = await self._request("GET", f"/api/states/{entity_id}")
+        if resp.status_code == 404:
+            raise HomeAssistantError(f"Entity not found: {entity_id}")
+        return resp.json()
 
     async def get_camera_image(self, entity_id: str) -> CameraImage:
         """Get camera snapshot image from Home Assistant.
@@ -91,22 +144,13 @@ class HAService:
         Raises:
             HomeAssistantError: If request fails
         """
-        try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                resp = await client.get(
-                    f"{self.url}/api/camera_proxy/{entity_id}",
-                    headers=self.headers
-                )
-                resp.raise_for_status()
-                return CameraImage(
-                    content=resp.content,
-                    content_type=resp.headers.get("content-type", ""),
-                    content_length=len(resp.content),
-                    status_code=resp.status_code,
-                )
-        except httpx.HTTPError as e:
-            logger.error(f"Failed to get camera image for {entity_id}: {e}")
-            raise HomeAssistantError(f"Failed to get camera image: {e}")
+        resp = await self._request("GET", f"/api/camera_proxy/{entity_id}")
+        return CameraImage(
+            content=resp.content,
+            content_type=resp.headers.get("content-type", ""),
+            content_length=len(resp.content),
+            status_code=resp.status_code,
+        )
 
     async def call_service(
         self,
@@ -134,17 +178,15 @@ class HAService:
             if target:
                 payload["target"] = target
 
-            async with httpx.AsyncClient(headers=self.headers, timeout=30.0) as client:
-                resp = await client.post(
-                    f"{self.url}/api/services/{domain}/{service}",
-                    json=payload,
-                    headers=self.headers
-                )
-                resp.raise_for_status()
-                return resp.json()
-        except httpx.HTTPError as e:
-            logger.error(f"Failed to call service {domain}.{service}: {e}")
-            raise HomeAssistantError(f"Failed to call service: {e}")
+            resp = await self._request(
+                "POST",
+                f"/api/services/{domain}/{service}",
+                json=payload,
+            )
+            return resp.json()
+        except HomeAssistantError as e:
+            logger.error("Failed to call Home Assistant service %s.%s: %s", domain, service, e)
+            raise
 
     async def send_notification(
         self,
@@ -184,17 +226,15 @@ class HAService:
             if data:
                 payload["data"] = data
 
-            async with httpx.AsyncClient(headers=self.headers, timeout=30.0) as client:
-                resp = await client.post(
-                    f"{self.url}/api/services/{domain}/{svc}",
-                    json=payload,
-                    headers=self.headers
-                )
-                resp.raise_for_status()
-                return resp.json()
-        except httpx.HTTPError as e:
-            logger.error(f"Failed to send notification: {e}")
-            raise HomeAssistantError(f"Failed to send notification: {e}")
+            resp = await self._request(
+                "POST",
+                f"/api/services/{domain}/{svc}",
+                json=payload,
+            )
+            return resp.json()
+        except HomeAssistantError as e:
+            logger.error("Failed to send notification via %s: %s", service, e)
+            raise
 
     async def test_connection(self) -> bool:
         """Test Home Assistant connection.
@@ -205,15 +245,6 @@ class HAService:
         Raises:
             HomeAssistantError: If connection fails
         """
-        try:
-            async with httpx.AsyncClient(headers=self.headers, timeout=10.0) as client:
-                resp = await client.get(
-                    f"{self.url}/api/",
-                    headers=self.headers
-                )
-                resp.raise_for_status()
-                logger.info("Home Assistant connection successful")
-                return True
-        except httpx.HTTPError as e:
-            logger.error(f"Home Assistant connection failed: {e}")
-            raise HomeAssistantError(f"Connection failed: {e}")
+        await self._request("GET", "/api/")
+        logger.info("Home Assistant connection successful")
+        return True

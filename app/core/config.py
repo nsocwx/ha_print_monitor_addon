@@ -11,7 +11,7 @@ import yaml
 logger = logging.getLogger(__name__)
 
 DATA_DIR = Path(os.getenv("DATA_DIR", "/data"))
-CONFIG_FILE = DATA_DIR / "config.yaml"
+CONFIG_FILE = Path(os.getenv("CONFIG_PATH", str(DATA_DIR / "config.yaml")))
 
 
 class PauseServiceConfig(BaseSettings):
@@ -28,7 +28,7 @@ class HomeAssistantConfig(BaseSettings):
     token: str = ""
     camera_entity: str = "camera.printer"
     printer_state_entity: str = "sensor.printer_status"
-    printing_states: List[str] = ["printing", "paused"]
+    printing_states: List[str] = ["printing"]
     pause_service: PauseServiceConfig = Field(default_factory=PauseServiceConfig)
     notify_services: List[str] = Field(default_factory=lambda: ["notify.mobile_app_phone"])
 
@@ -37,11 +37,14 @@ class PrinterConfig(BaseSettings):
     """Configuration for one monitored printer."""
     id: str = "default"
     name: str = "Default Printer"
+    enabled: bool = True
     camera_entity: str = "camera.printer"
     printer_state_entity: str = "sensor.printer_status"
-    printing_states: List[str] = ["printing", "paused"]
+    printing_states: List[str] = ["printing"]
     pause_service: PauseServiceConfig = Field(default_factory=PauseServiceConfig)
     notify_services: Optional[List[str]] = None
+    certainty_threshold_notify: Optional[float] = None
+    certainty_threshold_auto_pause: Optional[float] = None
 
 
 class MonitoringConfig(BaseSettings):
@@ -55,6 +58,38 @@ class MonitoringConfig(BaseSettings):
     auto_pause_delay_minutes: int = 15
     cooldown_minutes: int = 10
     snooze_minutes: int = 15
+    min_analysis_interval_seconds: int = 0
+    confirmation_window_minutes: int = 5
+    required_issue_consistency: bool = True
+
+
+class SafetyConfig(BaseSettings):
+    """Configuration for pause safety interlocks."""
+    require_recent_frame_seconds: int = 120
+    require_printer_still_printing: bool = True
+    require_issue_reconfirmation_before_pause: bool = True
+    prevent_duplicate_pause: bool = True
+
+
+class CameraConfig(BaseSettings):
+    """Configuration for camera capture reliability."""
+    stale_after_seconds: int = 120
+    capture_timeout_seconds: int = 15
+    retry_count: int = 2
+    retry_backoff_seconds: int = 3
+    fallback_snapshot_url: Optional[str] = None
+
+
+class NotificationsConfig(BaseSettings):
+    """Configuration for notifications."""
+    enabled: bool = True
+    quiet_hours_enabled: bool = False
+    quiet_hours_start: str = "22:00"
+    quiet_hours_end: str = "07:00"
+    notify_on_low: bool = False
+    notify_on_medium: bool = True
+    notify_on_high: bool = True
+    notify_on_critical: bool = True
 
 
 class ModelConfig(BaseSettings):
@@ -67,17 +102,35 @@ class ModelConfig(BaseSettings):
     auto_download: bool = True
     models_dir: str = "/data/models/printguard"
     device: str = "cpu"
+    max_inference_timeout_seconds: int = 30
 
 
 class SecurityConfig(BaseSettings):
     """Configuration for security."""
     action_token: str = "change-me-in-production"
+    action_signing_secret: str = "change-me-to-a-long-random-signing-secret"
+    action_token_ttl_hours: int = 24
 
 
 class RetentionConfig(BaseSettings):
     """Configuration for data retention."""
     keep_images_days: int = 7
     keep_events_days: int = 30
+    keep_clear_captures_hours: int = 24
+    keep_event_captures_days: int = 30
+    max_capture_storage_mb: int = 2048
+
+
+class LoggingConfig(BaseSettings):
+    """Configuration for logging."""
+    json_logs: bool = False
+    log_level: str = "INFO"
+
+
+class ProxyConfig(BaseSettings):
+    """Configuration for reverse proxy behavior."""
+    forwarded_headers: bool = False
+    trusted_hosts: List[str] = Field(default_factory=list)
 
 
 class AppConfig(BaseSettings):
@@ -87,9 +140,14 @@ class AppConfig(BaseSettings):
     home_assistant: HomeAssistantConfig = Field(default_factory=HomeAssistantConfig)
     printers: List[PrinterConfig] = Field(default_factory=list)
     monitoring: MonitoringConfig = Field(default_factory=MonitoringConfig)
+    safety: SafetyConfig = Field(default_factory=SafetyConfig)
+    camera: CameraConfig = Field(default_factory=CameraConfig)
+    notifications: NotificationsConfig = Field(default_factory=NotificationsConfig)
     model: ModelConfig = Field(default_factory=ModelConfig)
     security: SecurityConfig = Field(default_factory=SecurityConfig)
     retention: RetentionConfig = Field(default_factory=RetentionConfig)
+    logging: LoggingConfig = Field(default_factory=LoggingConfig)
+    proxy: ProxyConfig = Field(default_factory=ProxyConfig)
 
     class Config:
         env_file = str(DATA_DIR / ".env")
@@ -113,6 +171,27 @@ class AppConfig(BaseSettings):
     def load_monitoring_config(cls, v):
         if isinstance(v, dict):
             return MonitoringConfig(**v)
+        return v
+
+    @field_validator("safety", mode="before")
+    @classmethod
+    def load_safety_config(cls, v):
+        if isinstance(v, dict):
+            return SafetyConfig(**v)
+        return v
+
+    @field_validator("camera", mode="before")
+    @classmethod
+    def load_camera_config(cls, v):
+        if isinstance(v, dict):
+            return CameraConfig(**v)
+        return v
+
+    @field_validator("notifications", mode="before")
+    @classmethod
+    def load_notifications_config(cls, v):
+        if isinstance(v, dict):
+            return NotificationsConfig(**v)
         return v
 
     @field_validator("model", mode="before")
@@ -160,11 +239,26 @@ class AppConfig(BaseSettings):
             return RetentionConfig(**v)
         return v
 
+    @field_validator("logging", mode="before")
+    @classmethod
+    def load_logging_config(cls, v):
+        if isinstance(v, dict):
+            return LoggingConfig(**v)
+        return v
+
+    @field_validator("proxy", mode="before")
+    @classmethod
+    def load_proxy_config(cls, v):
+        if isinstance(v, dict):
+            return ProxyConfig(**v)
+        return v
+
 
 def load_config() -> AppConfig:
     """Load configuration from YAML file and environment variables."""
     # Create data directory if needed
     DATA_DIR.mkdir(parents=True, exist_ok=True)
+    CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
 
     config_dict = {}
 
@@ -206,6 +300,18 @@ def load_config() -> AppConfig:
     if action_token := os.getenv("ACTION_TOKEN"):
         config.security.action_token = action_token
 
+    if signing_secret := os.getenv("ACTION_SIGNING_SECRET"):
+        config.security.action_signing_secret = signing_secret
+
+    if log_level := os.getenv("LOG_LEVEL"):
+        config.logging.log_level = log_level
+
+    if json_logs := os.getenv("JSON_LOGS"):
+        config.logging.json_logs = json_logs.lower() in ("true", "1", "yes")
+
+    if forwarded := os.getenv("FORWARDED_HEADERS"):
+        config.proxy.forwarded_headers = forwarded.lower() in ("true", "1", "yes")
+
     return config
 
 
@@ -234,6 +340,7 @@ def save_config(config: AppConfig) -> None:
             {
                 "id": printer.id,
                 "name": printer.name,
+                "enabled": printer.enabled,
                 "camera_entity": printer.camera_entity,
                 "printer_state_entity": printer.printer_state_entity,
                 "printing_states": printer.printing_states,
@@ -244,6 +351,8 @@ def save_config(config: AppConfig) -> None:
                     "data": printer.pause_service.data,
                 },
                 "notify_services": printer.notify_services,
+                "certainty_threshold_notify": printer.certainty_threshold_notify,
+                "certainty_threshold_auto_pause": printer.certainty_threshold_auto_pause,
             }
             for printer in config.printers
         ],
@@ -257,6 +366,34 @@ def save_config(config: AppConfig) -> None:
             "auto_pause_delay_minutes": config.monitoring.auto_pause_delay_minutes,
             "cooldown_minutes": config.monitoring.cooldown_minutes,
             "snooze_minutes": config.monitoring.snooze_minutes,
+            "min_analysis_interval_seconds": config.monitoring.min_analysis_interval_seconds,
+            "confirmation_window_minutes": config.monitoring.confirmation_window_minutes,
+            "required_issue_consistency": config.monitoring.required_issue_consistency,
+        },
+        "safety": {
+            "require_recent_frame_seconds": config.safety.require_recent_frame_seconds,
+            "require_printer_still_printing": config.safety.require_printer_still_printing,
+            "require_issue_reconfirmation_before_pause": (
+                config.safety.require_issue_reconfirmation_before_pause
+            ),
+            "prevent_duplicate_pause": config.safety.prevent_duplicate_pause,
+        },
+        "camera": {
+            "stale_after_seconds": config.camera.stale_after_seconds,
+            "capture_timeout_seconds": config.camera.capture_timeout_seconds,
+            "retry_count": config.camera.retry_count,
+            "retry_backoff_seconds": config.camera.retry_backoff_seconds,
+            "fallback_snapshot_url": config.camera.fallback_snapshot_url,
+        },
+        "notifications": {
+            "enabled": config.notifications.enabled,
+            "quiet_hours_enabled": config.notifications.quiet_hours_enabled,
+            "quiet_hours_start": config.notifications.quiet_hours_start,
+            "quiet_hours_end": config.notifications.quiet_hours_end,
+            "notify_on_low": config.notifications.notify_on_low,
+            "notify_on_medium": config.notifications.notify_on_medium,
+            "notify_on_high": config.notifications.notify_on_high,
+            "notify_on_critical": config.notifications.notify_on_critical,
         },
         "model": {
             "provider": config.model.provider,
@@ -266,13 +403,27 @@ def save_config(config: AppConfig) -> None:
             "auto_download": config.model.auto_download,
             "models_dir": config.model.models_dir,
             "device": config.model.device,
+            "max_inference_timeout_seconds": config.model.max_inference_timeout_seconds,
         },
         "security": {
             "action_token": config.security.action_token,
+            "action_signing_secret": config.security.action_signing_secret,
+            "action_token_ttl_hours": config.security.action_token_ttl_hours,
         },
         "retention": {
             "keep_images_days": config.retention.keep_images_days,
             "keep_events_days": config.retention.keep_events_days,
+            "keep_clear_captures_hours": config.retention.keep_clear_captures_hours,
+            "keep_event_captures_days": config.retention.keep_event_captures_days,
+            "max_capture_storage_mb": config.retention.max_capture_storage_mb,
+        },
+        "logging": {
+            "json_logs": config.logging.json_logs,
+            "log_level": config.logging.log_level,
+        },
+        "proxy": {
+            "forwarded_headers": config.proxy.forwarded_headers,
+            "trusted_hosts": config.proxy.trusted_hosts,
         },
     }
 

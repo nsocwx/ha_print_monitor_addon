@@ -1,12 +1,23 @@
 """Logging configuration."""
 import logging
 import logging.handlers
+import os
 from pathlib import Path
 import json
 from datetime import datetime
 
-DATA_DIR = Path("/data")
+DATA_DIR = Path(os.getenv("DATA_DIR", "/data"))
 LOGS_DIR = DATA_DIR / "logs"
+SENSITIVE_KEYS = ("token", "secret", "authorization", "bearer")
+
+
+def redact(value: str) -> str:
+    """Redact obvious tokens/secrets from log text."""
+    text = str(value)
+    for key in SENSITIVE_KEYS:
+        if key in text.lower():
+            return "[redacted sensitive log message]"
+    return text
 
 
 class JSONFormatter(logging.Formatter):
@@ -17,7 +28,7 @@ class JSONFormatter(logging.Formatter):
             "timestamp": datetime.utcnow().isoformat(),
             "level": record.levelname,
             "logger": record.name,
-            "message": record.getMessage(),
+            "message": redact(record.getMessage()),
         }
 
         if record.exc_info:
@@ -26,7 +37,11 @@ class JSONFormatter(logging.Formatter):
         return json.dumps(log_data)
 
 
-def setup_logging(app_name: str = "ha-print-monitor", json_output: bool = False):
+def setup_logging(
+    app_name: str = "ha-print-monitor",
+    json_output: bool = False,
+    log_level: str = "INFO",
+):
     """Setup logging for the application.
 
     Args:
@@ -38,7 +53,8 @@ def setup_logging(app_name: str = "ha-print-monitor", json_output: bool = False)
 
     # Create logger
     logger = logging.getLogger()
-    logger.setLevel(logging.DEBUG)
+    level = getattr(logging, log_level.upper(), logging.INFO)
+    logger.setLevel(level)
 
     # Remove existing handlers
     for handler in logger.handlers[:]:
@@ -46,7 +62,7 @@ def setup_logging(app_name: str = "ha-print-monitor", json_output: bool = False)
 
     # Console handler
     console_handler = logging.StreamHandler()
-    console_handler.setLevel(logging.INFO)
+    console_handler.setLevel(level)
 
     if json_output:
         console_formatter = JSONFormatter()
@@ -66,7 +82,7 @@ def setup_logging(app_name: str = "ha-print-monitor", json_output: bool = False)
         maxBytes=10 * 1024 * 1024,  # 10MB
         backupCount=5,
     )
-    file_handler.setLevel(logging.DEBUG)
+    file_handler.setLevel(level)
 
     if json_output:
         file_formatter = JSONFormatter()

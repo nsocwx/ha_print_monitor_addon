@@ -12,6 +12,84 @@ This is a containerized web application that monitors 3D print cameras via Home 
 - **Web Dashboard**: Simple real-time dashboard showing printer state and recent events
 - **Modular ML**: Supports swapping between different analysis models (baseline, YOLO, ONNX, etc.)
 
+## Home Production Deployment
+
+For a home-production install, use Docker Compose with the provided `docker-compose.yml` and a persistent `./data` directory. Copy `.env.example` to `.env`, set `APP_BASE_URL` to the URL your phone can reach, and generate long random values for `ACTION_TOKEN` and `ACTION_SIGNING_SECRET`.
+
+```bash
+cp .env.example .env
+docker compose up -d --build
+```
+
+The container runs as a non-root user, has a `/health` healthcheck, restarts with `unless-stopped`, and limits Docker logs to 10 MB x 3 files. Persistent state lives in `/data`, including `config.yaml`, `app.db`, captures, logs, downloaded models, and backups.
+
+### Reverse Proxy
+
+Set `APP_BASE_URL` to the public URL of the app so notification images and action links work from mobile devices. Enable forwarded headers only when the app is behind a trusted proxy:
+
+```env
+APP_BASE_URL=https://prints.example.com
+FORWARDED_HEADERS=true
+```
+
+Caddy example:
+
+```caddyfile
+prints.example.com {
+  reverse_proxy ha-print-monitor:8080
+}
+```
+
+Nginx example:
+
+```nginx
+location / {
+  proxy_pass http://ha-print-monitor:8080;
+  proxy_set_header Host $host;
+  proxy_set_header X-Forwarded-Host $host;
+  proxy_set_header X-Forwarded-Proto $scheme;
+}
+```
+
+### Home Assistant Token
+
+HA Print Monitor uses the official Home Assistant REST API authorization pattern: `Authorization: Bearer TOKEN`. Create a long-lived access token from your Home Assistant user profile page and store it in `data/config.yaml` or `.env` as `HA_TOKEN`. Never paste this token into the dashboard or share diagnostics that have not been redacted.
+
+Required entities per printer:
+
+- Camera entity, such as `camera.prusa_camera` or `camera.octoprint_camera`
+- Printer state entity, such as a PrusaLink or OctoPrint state sensor
+- Pause service target, such as a pause button entity
+- Optional notify services, such as `notify.mobile_app_phone`
+
+Only include active printing states in `printing_states`. Do not include idle, ready, paused, finished, error, or standby states unless you intentionally want captures and analysis to run during those states.
+
+### Safety Model
+
+Auto-pause is conservative. The app does not pause when Home Assistant is unreachable, the printer state is unknown or no longer printing, the latest issue frame is stale, severity/certainty thresholds are not met, or the same event has already been paused. Manual and notification actions use signed one-time tokens; notification URLs do not reuse the dashboard operator token.
+
+To test pause safely, configure a harmless script or test button as the pause service first, trigger a test event, and confirm the service call in Home Assistant before pointing the config at the real printer pause control.
+
+### Troubleshooting
+
+- Dashboard health: open `/` and review Health, Camera Health, Print Protection, and Analysis Timeline.
+- Machine-readable diagnostics: `GET /api/diagnostics` returns redacted config, disk, model, HA, and printer state.
+- Backup: `GET /api/backup` downloads a zip containing `config.yaml` and SQLite database.
+- Logs: `docker compose logs -f ha-print-monitor`; file logs are under `data/logs`.
+- Mobile notifications: confirm `APP_BASE_URL` is externally reachable and not `localhost`.
+
+### Backup And Updates
+
+Back up the whole `data/` directory before updates:
+
+```bash
+docker compose down
+tar -czf ha-print-monitor-data-backup.tgz data
+docker compose up -d --build
+```
+
+Known limitations: restore is currently manual by replacing files under `data/` while the container is stopped; action tokens are one-time and expire, so old notification buttons may stop working after the configured TTL.
+
 ## Architecture
 
 ```

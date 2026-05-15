@@ -1,6 +1,9 @@
 """Main FastAPI application."""
 import logging
 import asyncio
+import os
+import shutil
+import zipfile
 from datetime import datetime
 from pathlib import Path
 from contextlib import asynccontextmanager
@@ -8,11 +11,12 @@ from typing import Optional
 
 from fastapi import FastAPI, Depends, HTTPException, Response
 from fastapi.responses import FileResponse, HTMLResponse
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 from sqlalchemy import text
 from sqlmodel import Session
 
-from app.core.config import load_config, save_config, AppConfig
-from app.core.database import SessionLocal, init_db, get_session
+from app.core.config import CONFIG_FILE, DATA_DIR, load_config, save_config, AppConfig
+from app.core.database import DATABASE_URL, SessionLocal, init_db, get_session
 from app.api import actions, analysis, events
 from app.api.schemas import (
     ConfigResponse,
@@ -22,6 +26,9 @@ from app.api.schemas import (
     StatusResponse,
 )
 from app.services.monitor import PrintMonitorService
+from app.version import APP_VERSION, BUILD_DATE, GIT_COMMIT
+from app.logging_config import setup_logging
+from app.maintenance import cleanup_old_data
 
 # Configure logging
 logging.basicConfig(
@@ -35,12 +42,13 @@ config: AppConfig = None
 monitor_services: dict[str, PrintMonitorService] = {}
 app_start_time: datetime = datetime.utcnow()
 monitoring_task: asyncio.Task = None
+maintenance_task: asyncio.Task = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan context manager for startup and shutdown."""
-    global config, monitor_services, monitoring_task
+    global config, monitor_services, monitoring_task, maintenance_task
 
     # Startup
     logger.info("Starting HA Print Monitor")
@@ -48,9 +56,20 @@ async def lifespan(app: FastAPI):
     # Load configuration
     try:
         config = load_config()
+        setup_logging(json_output=config.logging.json_logs, log_level=config.logging.log_level)
         logger.info("Configuration loaded successfully")
         logger.info(f"Home Assistant URL: {config.home_assistant.url}")
         logger.info(f"Configured printers: {[printer.id for printer in config.get_printers()]}")
+        if config.notifications.enabled and "localhost" in config.app_base_url:
+            logger.warning(
+                "APP_BASE_URL is localhost while notifications are enabled; "
+                "mobile action/image links may not be reachable outside this host"
+            )
+        if config.security.action_signing_secret.startswith("change-me"):
+            logger.warning(
+                "ACTION_SIGNING_SECRET is using the default value; set a long random "
+                "secret before relying on notification action links"
+            )
     except Exception as e:
         logger.error(f"Failed to load configuration: {e}")
         raise
@@ -68,9 +87,21 @@ async def lifespan(app: FastAPI):
         monitor_services = {
             printer.id: PrintMonitorService(config, printer)
             for printer in config.get_printers()
+            if printer.enabled
         }
+        if not monitor_services:
+            raise RuntimeError("No enabled printers configured")
         for service in monitor_services.values():
             await service.start()
+            try:
+                await service.ha_service.get_state(service.printer.printer_state_entity)
+                await service.ha_service.get_state(service.printer.camera_entity)
+            except Exception as e:
+                logger.warning(
+                    "Configured Home Assistant entity validation failed for %s: %s",
+                    service.printer_name,
+                    e,
+                )
     except Exception as e:
         logger.error(f"Failed to initialize monitor service: {e}")
         raise
@@ -89,6 +120,18 @@ async def lifespan(app: FastAPI):
 
     monitoring_task = asyncio.create_task(run_monitoring())
 
+    async def run_maintenance():
+        while True:
+            try:
+                with SessionLocal() as session:
+                    await cleanup_old_data(config, session)
+                await asyncio.sleep(3600)
+            except Exception as e:
+                logger.error("Maintenance loop failed: %s", e)
+                await asyncio.sleep(300)
+
+    maintenance_task = asyncio.create_task(run_maintenance())
+
     yield
 
     # Shutdown
@@ -97,6 +140,12 @@ async def lifespan(app: FastAPI):
         monitoring_task.cancel()
         try:
             await monitoring_task
+        except asyncio.CancelledError:
+            pass
+    if maintenance_task:
+        maintenance_task.cancel()
+        try:
+            await maintenance_task
         except asyncio.CancelledError:
             pass
 
@@ -110,9 +159,12 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="HA Print Monitor",
     description="Home Assistant 3D Print Monitoring",
-    version="0.1.0",
+    version=APP_VERSION,
     lifespan=lifespan,
 )
+
+if os.getenv("FORWARDED_HEADERS", "").lower() in ("1", "true", "yes"):
+    app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
 
 # Include routers
 app.include_router(events.router)
@@ -165,6 +217,9 @@ async def health_check() -> HealthResponse:
         home_assistant=ha_status,
         analyzer=analyzer_status,
         uptime_seconds=uptime,
+        app_version=APP_VERSION,
+        build_date=BUILD_DATE,
+        git_commit=GIT_COMMIT,
     )
 
 
@@ -217,11 +272,7 @@ def _printer_status_response(
         running=service.running,
         monitoring_enabled=config.monitoring.enabled,
         printer_state=service.printer_state,
-        printer_printing=(
-            service.printer_state in service.printer.printing_states
-            if service.printer_state
-            else False
-        ),
+        printer_printing=service.is_printer_printing(),
         last_capture_time=service.last_capture_time,
         last_capture_image_url=(
             f"/captures/{service.last_capture_path.name}"
@@ -230,8 +281,15 @@ def _printer_status_response(
         ),
         last_capture_status=service.last_capture_status,
         last_capture_error=service.last_capture_error,
+        last_successful_capture_time=service.last_successful_capture_time,
+        capture_success_count=service.capture_success_count,
+        capture_failure_count=service.capture_failure_count,
+        camera_stale=service.camera_is_stale(),
         last_analysis_time=service.last_analysis_time,
         latest_analysis_result=service.last_analysis_result,
+        last_analysis_error=service.last_analysis_error,
+        last_inference_duration_ms=service.last_inference_duration_ms,
+        model_status=service.model_status,
         active_event=_active_event_response(service, session),
     )
 
@@ -255,7 +313,7 @@ async def get_status(
     printer_status = _printer_status_response(service, session)
 
     return StatusResponse(
-        app_version="0.1.0",
+        app_version=APP_VERSION,
         printer_id=service.printer_id,
         printer_name=service.printer_name,
         running=printer_status.running,
@@ -266,8 +324,15 @@ async def get_status(
         last_capture_image_url=printer_status.last_capture_image_url,
         last_capture_status=printer_status.last_capture_status,
         last_capture_error=printer_status.last_capture_error,
+        last_successful_capture_time=printer_status.last_successful_capture_time,
+        capture_success_count=printer_status.capture_success_count,
+        capture_failure_count=printer_status.capture_failure_count,
+        camera_stale=printer_status.camera_stale,
         last_analysis_time=printer_status.last_analysis_time,
         latest_analysis_result=printer_status.latest_analysis_result,
+        last_analysis_error=printer_status.last_analysis_error,
+        last_inference_duration_ms=printer_status.last_inference_duration_ms,
+        model_status=printer_status.model_status,
         active_event=printer_status.active_event,
         health_status="healthy",
     )
@@ -284,8 +349,9 @@ async def get_config(printer_id: Optional[str] = None) -> ConfigResponse:
         camera_entity=config.home_assistant.camera_entity,
         printer_state_entity=config.home_assistant.printer_state_entity,
         selected_printer={
-            "id": service.printer.id,
-            "name": service.printer.name,
+                "id": service.printer.id,
+                "name": service.printer.name,
+                "enabled": service.printer.enabled,
             "camera_entity": service.printer.camera_entity,
             "printer_state_entity": service.printer.printer_state_entity,
             "printing_states": service.printer.printing_states,
@@ -311,12 +377,89 @@ async def get_config(printer_id: Optional[str] = None) -> ConfigResponse:
             {
                 "id": printer.id,
                 "name": printer.name,
+                "enabled": printer.enabled,
                 "camera_entity": printer.camera_entity,
                 "printer_state_entity": printer.printer_state_entity,
             }
             for printer in config.get_printers()
         ],
+        safety=config.safety.model_dump(),
+        camera=config.camera.model_dump(),
+        notifications=config.notifications.model_dump(),
+        retention=config.retention.model_dump(),
     )
+
+
+@app.get("/api/diagnostics")
+async def diagnostics() -> dict:
+    """Return redacted diagnostics for troubleshooting."""
+    data_dir_usage = shutil.disk_usage(DATA_DIR)
+    capture_dir = DATA_DIR / "captures"
+    capture_bytes = sum(path.stat().st_size for path in capture_dir.glob("*") if path.is_file()) if capture_dir.exists() else 0
+    return {
+        "version": {
+            "app_version": APP_VERSION,
+            "build_date": BUILD_DATE,
+            "git_commit": GIT_COMMIT,
+        },
+        "paths": {
+            "config_file": str(CONFIG_FILE),
+            "database_url": DATABASE_URL.replace(str(DATA_DIR), "/data"),
+            "data_dir": str(DATA_DIR),
+        },
+        "disk": {
+            "data_total_bytes": data_dir_usage.total,
+            "data_used_bytes": data_dir_usage.used,
+            "data_free_bytes": data_dir_usage.free,
+            "captures_bytes": capture_bytes,
+        },
+        "config": {
+            "app_base_url": config.app_base_url,
+            "timezone": config.timezone,
+            "home_assistant_url": config.home_assistant.url,
+            "monitoring": config.monitoring.model_dump(),
+            "safety": config.safety.model_dump(),
+            "camera": config.camera.model_dump(),
+            "notifications": config.notifications.model_dump(),
+            "retention": config.retention.model_dump(),
+            "model": {
+                "provider": config.model.provider,
+                "device": config.model.device,
+                "auto_download": config.model.auto_download,
+            },
+        },
+        "printers": {
+            printer_id: {
+                "printer_name": service.printer_name,
+                "running": service.running,
+                "printer_state": service.printer_state,
+                "printer_printing": service.is_printer_printing(),
+                "camera_stale": service.camera_is_stale(),
+                "last_capture_status": service.last_capture_status,
+                "last_capture_error": service.last_capture_error,
+                "capture_success_count": service.capture_success_count,
+                "capture_failure_count": service.capture_failure_count,
+                "model_status": service.model_status,
+                "last_analysis_error": service.last_analysis_error,
+            }
+            for printer_id, service in monitor_services.items()
+        },
+    }
+
+
+@app.get("/api/backup")
+async def backup() -> FileResponse:
+    """Create a simple backup archive with config and SQLite database."""
+    backup_dir = DATA_DIR / "backups"
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    archive_path = backup_dir / f"ha-print-monitor-backup-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}.zip"
+    with zipfile.ZipFile(archive_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        if CONFIG_FILE.exists():
+            archive.write(CONFIG_FILE, "config.yaml")
+        db_path = DATA_DIR / "app.db"
+        if db_path.exists():
+            archive.write(db_path, "app.db")
+    return FileResponse(archive_path, media_type="application/zip", filename=archive_path.name)
 
 
 @app.get("/captures/{filename}")

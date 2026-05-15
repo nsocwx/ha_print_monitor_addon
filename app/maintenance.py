@@ -47,8 +47,9 @@ async def cleanup_old_data(config: AppConfig, session: Session):
         session.commit()
         logger.info(f"Deleted {deleted_count} old events")
 
+    cutoff_clear_results = now - timedelta(hours=retention_config.keep_clear_captures_hours)
     old_results = session.exec(
-        select(AnalysisResult).where(AnalysisResult.created_at < cutoff_events)
+        select(AnalysisResult).where(AnalysisResult.created_at < cutoff_clear_results)
     ).all()
     deleted_results = 0
     for result in old_results:
@@ -59,10 +60,13 @@ async def cleanup_old_data(config: AppConfig, session: Session):
         session.commit()
         logger.info(f"Deleted {deleted_results} old analysis results")
 
-    # Cleanup old images
-    cutoff_images = now - timedelta(days=retention_config.keep_images_days)
+    # Cleanup old clear images sooner than event images.
+    cutoff_images = now - timedelta(hours=retention_config.keep_clear_captures_hours)
     old_captures = session.exec(
-        select(CameraCapture).where(CameraCapture.captured_at < cutoff_images)
+        select(CameraCapture).where(
+            CameraCapture.captured_at < cutoff_images,
+            CameraCapture.event_id == None,  # noqa: E711
+        )
     ).all()
 
     deleted_images = 0
@@ -78,6 +82,8 @@ async def cleanup_old_data(config: AppConfig, session: Session):
         session.commit()
         logger.info(f"Deleted {deleted_images} old capture images")
 
+    await enforce_capture_storage_limit(config, session)
+
     # Cleanup old logs
     cutoff_logs = now - timedelta(days=7)  # Keep logs for 7 days
     old_logs = session.exec(
@@ -92,3 +98,36 @@ async def cleanup_old_data(config: AppConfig, session: Session):
     if deleted_logs > 0:
         session.commit()
         logger.info(f"Deleted {deleted_logs} old system logs")
+
+
+async def enforce_capture_storage_limit(config: AppConfig, session: Session):
+    """Delete oldest non-event captures when capture storage exceeds max size."""
+    max_bytes = config.retention.max_capture_storage_mb * 1024 * 1024
+    captures_dir = Path("/data/captures")
+    if not captures_dir.exists():
+        return
+
+    total = sum(path.stat().st_size for path in captures_dir.glob("*") if path.is_file())
+    if total <= max_bytes:
+        return
+
+    captures = session.exec(
+        select(CameraCapture)
+        .where(CameraCapture.event_id == None)  # noqa: E711
+        .order_by(CameraCapture.captured_at)
+    ).all()
+
+    deleted = 0
+    for capture in captures:
+        if total <= max_bytes:
+            break
+        path = Path(capture.file_path)
+        size = path.stat().st_size if path.exists() else 0
+        path.unlink(missing_ok=True)
+        total -= size
+        session.delete(capture)
+        deleted += 1
+
+    if deleted:
+        session.commit()
+        logger.warning("Deleted %s old non-event captures to enforce disk limit", deleted)

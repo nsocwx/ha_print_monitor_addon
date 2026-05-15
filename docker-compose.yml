@@ -1,21 +1,45 @@
-version: '3.8'
-
 services:
   ha-print-monitor:
     build: .
     container_name: ha-print-monitor
+
+    # Expose the dashboard locally. Put Caddy, Nginx, Traefik, or Home Assistant
+    # ingress in front of this port for remote/mobile access.
     ports:
-      - "8080:8080"
+      - "${APP_PORT:-8080}:8080"
+
+    # Persistent application state. The app stores config, SQLite, captures,
+    # downloaded models, backups, and file logs under /data.
     volumes:
       - ./data:/data
-    # If you want to use config.yaml exclusively, remove or comment out environment overrides.
-    # environment:
-    #   - DATA_DIR=/data
-    #   - HA_URL=http://homeassistant.local:8123
-    #   - HA_TOKEN=your-long-lived-token-here
-    #   - APP_BASE_URL=http://localhost:8080
-    #   - ACTION_TOKEN=your-secure-token-here
+
+    environment:
+      DATA_DIR: /data
+      CONFIG_PATH: ${CONFIG_PATH:-/data/config.yaml}
+      HA_URL: ${HA_URL:-}
+      HA_TOKEN: ${HA_TOKEN:-}
+      APP_BASE_URL: ${APP_BASE_URL:-http://localhost:8080}
+      ACTION_TOKEN: ${ACTION_TOKEN:-change-me-in-production}
+      ACTION_SIGNING_SECRET: ${ACTION_SIGNING_SECRET:-change-me-to-a-long-random-signing-secret}
+      FORWARDED_HEADERS: ${FORWARDED_HEADERS:-false}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      JSON_LOGS: ${JSON_LOGS:-false}
+
     restart: unless-stopped
+
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
     networks:
       - default
 

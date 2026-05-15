@@ -41,6 +41,10 @@ def test_monitoring_thresholds():
     assert config.monitoring.certainty_threshold_notify == 0.7
     assert config.monitoring.certainty_threshold_auto_pause == 0.85
     assert config.monitoring.auto_pause_delay_minutes == 15
+    assert config.safety.require_printer_still_printing is True
+    assert config.camera.stale_after_seconds == 120
+    assert config.notifications.notify_on_high is True
+    assert config.retention.max_capture_storage_mb == 2048
 
 
 def test_security_config():

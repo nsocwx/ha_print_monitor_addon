@@ -615,8 +615,7 @@
         function renderCameraHealth(status) {
             const captureDate = parseApiDate(status.last_capture_time);
             const ageMs = captureDate ? Date.now() - captureDate.getTime() : NaN;
-            const staleMs = 2 * 60 * 1000;
-            const stale = Number.isFinite(ageMs) && ageMs > staleMs;
+            const stale = Boolean(status.camera_stale);
             const captureError = status.last_capture_status === 'error';
             const stateClass = captureError ? 'unhealthy' : !status.last_capture_time ? 'unhealthy' : stale ? 'degraded' : 'healthy';
             const stateText = captureError ? 'Capture error' : !status.last_capture_time ? 'No capture' : stale ? 'Stale frame' : 'Recent frame';
@@ -637,6 +636,14 @@
                 <div class="status-item">
                     <label>Warning</label>
                     <span class="value">${esc(warning)}</span>
+                </div>
+                <div class="status-item">
+                    <label>Successful Captures</label>
+                    <span class="value">${Number(status.capture_success_count || 0)}</span>
+                </div>
+                <div class="status-item">
+                    <label>Failed Captures</label>
+                    <span class="value">${Number(status.capture_failure_count || 0)}</span>
                 </div>
             `;
         }
@@ -862,6 +869,10 @@
                     <span class="status-badge ${classToken(data.analyzer)}">${esc(data.analyzer)}</span>
                 </div>
                 <div class="status-item">
+                    <label>Version</label>
+                    <span class="value">${esc(data.app_version || 'unknown')} (${esc(data.git_commit || 'unknown')})</span>
+                </div>
+                <div class="status-item">
                     <label>Uptime</label>
                     <span class="value">${Number(data.uptime_seconds / 60).toFixed(1)} minutes</span>
                 </div>
@@ -901,9 +912,25 @@
         }
 
         async function runEventAction(action, eventId) {
-            const token = getActionToken();
-            if (!token) return;
-            const params = new URLSearchParams({ event_id: eventId, token });
+            const operatorToken = getActionToken();
+            if (!operatorToken) return;
+            const tokenParams = new URLSearchParams({
+                event_id: eventId,
+                action,
+                operator_token: operatorToken,
+            });
+            const tokenResp = await fetch(`${API_BASE}/api/actions/token?${tokenParams.toString()}`, { method: 'POST' });
+            if (tokenResp.status === 401) {
+                localStorage.removeItem(ACTION_TOKEN_KEY);
+                alert('Invalid operator token.');
+                return;
+            }
+            if (!tokenResp.ok) {
+                alert(`Could not create action token for ${action}.`);
+                return;
+            }
+            const tokenData = await tokenResp.json();
+            const params = new URLSearchParams({ token: tokenData.token });
             let path = `/api/actions/${action}`;
             if (action === 'snooze') {
                 path = '/api/actions/snooze';

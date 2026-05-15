@@ -38,10 +38,24 @@ def _migrate_existing_tables():
         "printer_events": [
             ("printer_id", "TEXT NOT NULL DEFAULT 'default'"),
             ("printer_name", "TEXT NOT NULL DEFAULT 'Default Printer'"),
+            ("first_seen_at", "DATETIME"),
+            ("last_seen_at", "DATETIME"),
+            ("resolved_at", "DATETIME"),
+            ("notification_sent_at", "DATETIME"),
+            ("user_action", "TEXT"),
+            ("user_action_at", "DATETIME"),
+            ("pause_attempted_at", "DATETIME"),
+            ("pause_result", "TEXT"),
+            ("pause_failure_reason", "TEXT"),
         ],
         "camera_captures": [
             ("printer_id", "TEXT NOT NULL DEFAULT 'default'"),
             ("printer_name", "TEXT NOT NULL DEFAULT 'Default Printer'"),
+        ],
+        "analysis_results": [
+            ("printer_id", "TEXT NOT NULL DEFAULT 'default'"),
+            ("printer_name", "TEXT NOT NULL DEFAULT 'Default Printer'"),
+            ("inference_duration_ms", "FLOAT"),
         ],
     }
 

@@ -6,6 +6,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y \
     libopencv-dev \
     python3-opencv \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements
@@ -17,8 +18,13 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application
 COPY . .
 
-# Create data directory
-RUN mkdir -p /data
+# Create writable runtime directories and non-root user
+RUN groupadd --system app && \
+    useradd --system --gid app --home /app app && \
+    mkdir -p /data/captures /data/logs /data/backups && \
+    chown -R app:app /app /data
+
+USER app
 
 # Expose port
 EXPOSE 8080

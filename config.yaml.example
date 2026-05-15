@@ -10,7 +10,10 @@ home_assistant:
   printer_state_entity: "sensor.prusa_print_status"
   printing_states:
     - "printing"
-    - "paused"
+    # Only states that mean the printer is actively extruding/printing should
+    # be listed here. Idle, ready, paused, finished, error, and standby states
+    # are intentionally excluded so the app does not take snapshots or run
+    # detection when no print is active.
   pause_service:
     domain: "button"
     service: "press"
@@ -25,9 +28,10 @@ home_assistant:
 # printers:
 #   - id: "prusa"
 #     name: "Prusa"
+#     enabled: true
 #     camera_entity: "camera.prusa_camera"
 #     printer_state_entity: "sensor.prusa_print_status"
-#     printing_states: ["printing", "paused"]
+#     printing_states: ["printing"]
 #     pause_service:
 #       domain: "button"
 #       service: "press"
@@ -37,9 +41,10 @@ home_assistant:
 #       - "notify.mobile_app_mobile_phone"
 #   - id: "voron"
 #     name: "Voron"
+#     enabled: true
 #     camera_entity: "camera.voron_camera"
 #     printer_state_entity: "sensor.voron_print_status"
-#     printing_states: ["printing", "paused"]
+#     printing_states: ["printing"]
 #     pause_service:
 #       domain: "button"
 #       service: "press"
@@ -82,6 +87,32 @@ monitoring:
 
   # Minutes used by dashboard/mobile notification snooze actions.
   snooze_minutes: 15
+  min_analysis_interval_seconds: 0
+  confirmation_window_minutes: 5
+  required_issue_consistency: true
+
+safety:
+  require_recent_frame_seconds: 120
+  require_printer_still_printing: true
+  require_issue_reconfirmation_before_pause: true
+  prevent_duplicate_pause: true
+
+camera:
+  stale_after_seconds: 120
+  capture_timeout_seconds: 15
+  retry_count: 2
+  retry_backoff_seconds: 3
+  fallback_snapshot_url: null
+
+notifications:
+  enabled: true
+  quiet_hours_enabled: false
+  quiet_hours_start: "22:00"
+  quiet_hours_end: "07:00"
+  notify_on_low: false
+  notify_on_medium: true
+  notify_on_high: true
+  notify_on_critical: true
 
 model:
   provider: "baseline"  # baseline, onnx
@@ -91,10 +122,24 @@ model:
   auto_download: true
   models_dir: "/data/models/printguard"
   device: "cpu"
+  max_inference_timeout_seconds: 30
 
 security:
   action_token: "change-me-in-production-to-a-long-random-string"
+  action_signing_secret: "change-me-to-a-second-long-random-string"
+  action_token_ttl_hours: 24
 
 retention:
   keep_images_days: 7
-  keep_events_days: 30
+  keep_clear_captures_hours: 24
+  keep_event_captures_days: 30
+  keep_events_days: 90
+  max_capture_storage_mb: 2048
+
+logging:
+  json_logs: false
+  log_level: "INFO"
+
+proxy:
+  forwarded_headers: false
+  trusted_hosts: []

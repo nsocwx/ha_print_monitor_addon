@@ -37,6 +37,15 @@ class EventResponse(TimestampedResponse):
     auto_pause_deadline: Optional[datetime]
     auto_paused: bool
     snoozed_until: Optional[datetime]
+    first_seen_at: Optional[datetime] = None
+    last_seen_at: Optional[datetime] = None
+    resolved_at: Optional[datetime] = None
+    notification_sent_at: Optional[datetime] = None
+    user_action: Optional[str] = None
+    user_action_at: Optional[datetime] = None
+    pause_attempted_at: Optional[datetime] = None
+    pause_result: Optional[str] = None
+    pause_failure_reason: Optional[str] = None
 
 
 class StatusResponse(TimestampedResponse):
@@ -52,8 +61,15 @@ class StatusResponse(TimestampedResponse):
     last_capture_image_url: Optional[str]
     last_capture_status: str
     last_capture_error: Optional[str]
+    last_successful_capture_time: Optional[datetime] = None
+    capture_success_count: int = 0
+    capture_failure_count: int = 0
+    camera_stale: bool = False
     last_analysis_time: Optional[datetime]
     latest_analysis_result: Optional[Dict[str, Any]]
+    last_analysis_error: Optional[str] = None
+    last_inference_duration_ms: Optional[float] = None
+    model_status: str = "unknown"
     active_event: Optional[EventResponse]
     health_status: str
 
@@ -72,8 +88,15 @@ class PrinterStatusResponse(TimestampedResponse):
     last_capture_image_url: Optional[str]
     last_capture_status: str
     last_capture_error: Optional[str]
+    last_successful_capture_time: Optional[datetime] = None
+    capture_success_count: int = 0
+    capture_failure_count: int = 0
+    camera_stale: bool = False
     last_analysis_time: Optional[datetime]
     latest_analysis_result: Optional[Dict[str, Any]]
+    last_analysis_error: Optional[str] = None
+    last_inference_duration_ms: Optional[float] = None
+    model_status: str = "unknown"
     active_event: Optional[EventResponse]
 
 
@@ -110,6 +133,10 @@ class ConfigResponse(BaseModel):
     auto_pause_delay_minutes: int
     cooldown_minutes: int
     printers: List[Dict[str, Any]]
+    safety: Dict[str, Any] = {}
+    camera: Dict[str, Any] = {}
+    notifications: Dict[str, Any] = {}
+    retention: Dict[str, Any] = {}
 
 
 class ActionResponse(BaseModel):
@@ -127,3 +154,6 @@ class HealthResponse(BaseModel):
     home_assistant: str
     analyzer: str
     uptime_seconds: float
+    app_version: str = "unknown"
+    build_date: str = "unknown"
+    git_commit: str = "unknown"

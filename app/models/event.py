@@ -33,6 +33,15 @@ class PrinterEvent(SQLModel, table=True):
     # Status tracking
     status: str = Field(default="active")  # active, acknowledged, ignored, snoozed, paused, resolved
     recommended_action: str  # continue, notify, pause
+    first_seen_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
+    last_seen_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
+    resolved_at: Optional[datetime] = None
+    notification_sent_at: Optional[datetime] = None
+    user_action: Optional[str] = None
+    user_action_at: Optional[datetime] = None
+    pause_attempted_at: Optional[datetime] = None
+    pause_result: Optional[str] = None
+    pause_failure_reason: Optional[str] = None
 
     # Auto-pause tracking
     auto_pause_deadline: Optional[datetime] = None
@@ -95,6 +104,20 @@ class AnalysisResult(SQLModel, table=True):
     image_path: Optional[str] = None
     annotated_image_path: Optional[str] = None
     raw_model_output_json: Optional[str] = None
+    inference_duration_ms: Optional[float] = None
+
+
+class ActionTokenNonce(SQLModel, table=True):
+    """Used one-time notification action token nonce."""
+    __tablename__ = "action_token_nonces"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    nonce: str = Field(unique=True, index=True)
+    event_id: str = Field(index=True)
+    action: str
+    printer_id: str = Field(index=True)
+    expires_at: datetime
+    used_at: datetime = Field(default_factory=datetime.utcnow)
 
 
 class SystemLog(SQLModel, table=True):
