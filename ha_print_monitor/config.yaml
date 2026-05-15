@@ -1,7 +1,7 @@
 name: "HA Print Monitor"
 slug: "ha_print_monitor"
 description: "Monitor 3D prints with Home Assistant cameras, model analysis, notifications, and safe pause actions."
-version: "0.3.0"
+version: "0.3.1"
 arch:
   - amd64
   - aarch64
@@ -62,43 +62,43 @@ options:
     json_logs: false
 schema:
   printers:
-    - printer_id: "match(^[A-Za-z0-9_-]+$)"
-      name: "str(1,80)"
-      camera_entity: "match(^camera\\.[A-Za-z0-9_]+$)"
-      printer_state_entity: "match(^[A-Za-z0-9_]+\\.[A-Za-z0-9_]+$)"
+    - printer_id: str
+      name: str
+      camera_entity: str
+      printer_state_entity: str
       printing_states:
         - str
-      pause_service_domain: "str(1,80)"
-      pause_service_service: "str(1,80)"
-      pause_service_target: "match(^[A-Za-z0-9_]+\\.[A-Za-z0-9_]+$)"
+      pause_service_domain: str
+      pause_service_service: str
+      pause_service_target: str
       pause_service_data_json: str
       notify_services:
         - str
   monitoring:
     enabled: bool
-    frame_interval_seconds: "int(5,3600)"
-    confirmation_frames: "int(1,20)"
-    certainty_threshold_notify: "float(0,1)"
-    certainty_threshold_auto_pause: "float(0,1)"
-    auto_pause_delay_minutes: "int(0,1440)"
-    snooze_minutes: "int(1,1440)"
-    cooldown_minutes: "int(0,1440)"
+    frame_interval_seconds: int
+    confirmation_frames: int
+    certainty_threshold_notify: float
+    certainty_threshold_auto_pause: float
+    auto_pause_delay_minutes: int
+    snooze_minutes: int
+    cooldown_minutes: int
   model:
     provider: "list(onnx|baseline)"
-    model_path: "str?"
+    model_path: str
     device: "list(cpu|cuda)"
   camera:
-    stale_after_seconds: "int(10,3600)"
-    capture_timeout_seconds: "int(1,120)"
-    retry_count: "int(0,10)"
-    retry_backoff_seconds: "int(0,60)"
+    stale_after_seconds: int
+    capture_timeout_seconds: int
+    retry_count: int
+    retry_backoff_seconds: int
   retention:
-    keep_clear_captures_hours: "int(1,8760)"
-    keep_event_captures_days: "int(1,3650)"
-    keep_events_days: "int(1,3650)"
-    max_capture_storage_mb: "int(64,1048576)"
+    keep_clear_captures_hours: int
+    keep_event_captures_days: int
+    keep_events_days: int
+    max_capture_storage_mb: int
   security:
-    action_token_expiration_hours: "int(1,168)"
+    action_token_expiration_hours: int
   advanced:
     log_level: "list(debug|info|warning|error|critical)"
     json_logs: bool
