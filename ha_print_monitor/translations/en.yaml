@@ -1,0 +1,75 @@
+configuration:
+  printers:
+    name: Printers
+    description: Configure each monitored printer.
+    fields:
+      printer_id:
+        name: Printer ID
+        description: Short unique ID used internally by the add-on.
+      name:
+        name: Display name
+        description: Friendly printer name shown in the dashboard and notifications.
+      camera_entity:
+        name: Camera entity
+        description: Home Assistant camera entity to capture while this printer is printing.
+      printer_state_entity:
+        name: Printer state entity
+        description: Entity whose state indicates whether the printer is currently printing.
+      printing_states:
+        name: Printing states
+        description: State values that mean the printer is actively printing.
+      pause_service_target:
+        name: Pause button entity
+        description: Button entity to press when pausing the print. The add-on calls button.press automatically.
+      notify_services:
+        name: Notification services
+        description: Notify services to call, such as notify.mobile_app_phone.
+  monitoring:
+    name: Monitoring
+    description: Controls how often frames are captured and when alerts or auto-pause actions happen.
+    fields:
+      enabled:
+        name: Enabled
+      frame_interval_seconds:
+        name: Frame interval seconds
+      confirmation_frames:
+        name: Confirmation frames
+      certainty_threshold_notify:
+        name: Notification certainty threshold
+      certainty_threshold_auto_pause:
+        name: Auto-pause certainty threshold
+      auto_pause_delay_minutes:
+        name: Auto-pause delay minutes
+      snooze_minutes:
+        name: Snooze minutes
+      cooldown_minutes:
+        name: Cooldown minutes
+  model:
+    name: Model
+    fields:
+      provider:
+        name: Provider
+      model_path:
+        name: Model path
+      device:
+        name: Device
+  camera:
+    name: Camera
+    fields:
+      stale_after_seconds:
+        name: Stale after seconds
+      capture_timeout_seconds:
+        name: Capture timeout seconds
+      retry_count:
+        name: Retry count
+      retry_backoff_seconds:
+        name: Retry backoff seconds
+      fallback_snapshot_url:
+        name: Fallback snapshot URL
+        description: Optional direct still-image URL to use if Home Assistant camera_proxy returns a placeholder instead of an image.
+  retention:
+    name: Retention
+  security:
+    name: Security
+  advanced:
+    name: Advanced

@@ -1,7 +1,7 @@
 name: "HA Print Monitor"
 slug: "ha_print_monitor"
 description: "Monitor 3D prints with Home Assistant cameras, model analysis, notifications, and safe pause actions."
-version: "0.3.6"
+version: "0.3.8"
 arch:
   - amd64
   - aarch64
@@ -26,10 +26,7 @@ options:
         - printing
         - Printing
         - running
-      pause_service_domain: button
-      pause_service_service: press
       pause_service_target: button.example_pause_print
-      pause_service_data_json: "{}"
       notify_services:
         - notify.mobile_app_mobile_phone
   monitoring:
@@ -69,10 +66,7 @@ schema:
       printer_state_entity: str
       printing_states:
         - str
-      pause_service_domain: str
-      pause_service_service: str
       pause_service_target: str
-      pause_service_data_json: str
       notify_services:
         - str
   monitoring:
