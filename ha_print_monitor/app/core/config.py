@@ -48,9 +48,47 @@ class PrinterConfig(BaseSettings):
     printer_state_entity: str = "sensor.printer_status"
     printing_states: List[str] = ["printing"]
     pause_service: PauseServiceConfig = Field(default_factory=PauseServiceConfig)
+    pause_service_domain: Optional[str] = None
+    pause_service_service: Optional[str] = None
+    pause_service_target: Optional[str] = None
+    pause_service_data_json: Optional[str] = None
     notify_services: Optional[List[str]] = None
     certainty_threshold_notify: Optional[float] = None
     certainty_threshold_auto_pause: Optional[float] = None
+
+    @field_validator("pause_service", mode="before")
+    @classmethod
+    def load_pause_service_config(cls, v):
+        if isinstance(v, dict):
+            return PauseServiceConfig(**v)
+        return v
+
+    def model_post_init(self, __context: Any) -> None:
+        if not any(
+            [
+                self.pause_service_domain,
+                self.pause_service_service,
+                self.pause_service_target,
+                self.pause_service_data_json,
+            ]
+        ):
+            return
+
+        data = {}
+        if self.pause_service_data_json:
+            try:
+                data = json.loads(self.pause_service_data_json)
+            except json.JSONDecodeError as err:
+                raise ValueError("pause_service_data_json must be valid JSON") from err
+            if not isinstance(data, dict):
+                raise ValueError("pause_service_data_json must decode to a JSON object")
+
+        self.pause_service = PauseServiceConfig(
+            domain=self.pause_service_domain or self.pause_service.domain,
+            service=self.pause_service_service or self.pause_service.service,
+            target=self.pause_service_target or self.pause_service.target,
+            data=data or self.pause_service.data,
+        )
 
 
 class MonitoringConfig(BaseSettings):
