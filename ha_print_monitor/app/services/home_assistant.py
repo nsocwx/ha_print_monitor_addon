@@ -142,6 +142,11 @@ class HAService:
             raise HomeAssistantError(f"Entity not found: {entity_id}")
         return resp.json()
 
+    async def get_home_assistant_config(self) -> Dict[str, Any]:
+        """Get Home Assistant Core configuration metadata."""
+        resp = await self._request("GET", "/api/config")
+        return resp.json()
+
     async def get_camera_image(self, entity_id: str) -> CameraImage:
         """Get camera snapshot image from Home Assistant.
 

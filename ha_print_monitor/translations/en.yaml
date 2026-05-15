@@ -1,4 +1,7 @@
 configuration:
+  timezone:
+    name: Timezone override
+    description: Optional IANA timezone such as America/Chicago. Leave unset to use Home Assistant's configured timezone.
   printers:
     name: Printers
     description: Configure each monitored printer.

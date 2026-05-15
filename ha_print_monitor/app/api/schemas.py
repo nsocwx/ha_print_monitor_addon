@@ -120,7 +120,6 @@ class ConfigResponse(BaseModel):
     """Response for configuration."""
 
     app_base_url: str
-    external_base_url: Optional[str] = None
     timezone: str
     home_assistant_url: str
     camera_entity: str

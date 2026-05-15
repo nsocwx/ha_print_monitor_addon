@@ -27,6 +27,7 @@ from app.api.schemas import (
     StatusResponse,
 )
 from app.services.monitor import PrintMonitorService
+from app.services.home_assistant import HAService
 from app.version import APP_VERSION, BUILD_DATE, GIT_COMMIT
 from app.logging_config import setup_logging
 from app.maintenance import cleanup_old_data
@@ -61,11 +62,6 @@ async def lifespan(app: FastAPI):
         logger.info("Configuration loaded successfully")
         logger.info("Home Assistant API: Supervisor Core API")
         logger.info(f"Configured printers: {[printer.id for printer in config.get_printers()]}")
-        if config.notifications.enabled and not config.external_base_url:
-            logger.warning(
-                "external_base_url is not configured; mobile push image/action links "
-                "may not be reachable outside Home Assistant ingress"
-            )
         if config.security.action_signing_secret.startswith("change-me"):
             logger.warning(
                 "ACTION_SIGNING_SECRET is using the default value; set a long random "
@@ -74,6 +70,20 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error("Failed to load configuration: %s", redact_sensitive(str(e)))
         raise
+
+    if not config.timezone:
+        try:
+            ha_service = HAService(config.home_assistant.url, config.home_assistant.token)
+            ha_config = await ha_service.get_home_assistant_config()
+            await ha_service.close()
+            config.timezone = ha_config.get("time_zone") or "UTC"
+            logger.info("Timezone loaded from Home Assistant: %s", config.timezone)
+        except Exception as e:
+            config.timezone = "UTC"
+            logger.warning(
+                "Could not load Home Assistant timezone; falling back to UTC: %s",
+                redact_sensitive(str(e)),
+            )
 
     # Initialize database
     try:
@@ -353,7 +363,6 @@ async def get_config(printer_id: Optional[str] = None) -> ConfigResponse:
     service = _get_monitor_service(printer_id)
     return ConfigResponse(
         app_base_url=config.app_base_url,
-        external_base_url=config.external_base_url,
         timezone=config.timezone,
         home_assistant_url="Supervisor Core API",
         camera_entity=config.home_assistant.camera_entity,

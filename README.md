@@ -32,7 +32,17 @@ ha_print_monitor/
   Dockerfile
 ```
 
-The `ha_print_monitor/` directory is the actual add-on package Home Assistant builds.
+The `ha_print_monitor/` directory is the actual add-on package.
+
+## Prebuilt Images
+
+The add-on is configured to use prebuilt GHCR images:
+
+```text
+ghcr.io/nsocwx/ha_print_monitor_addon:<version>
+```
+
+The GitHub Actions workflow in `.github/workflows/build-container.yml` builds `amd64` and `aarch64` images whenever add-on files change on `main`, then publishes a multi-arch version tag and `latest`. The GHCR package must be public so Home Assistant can pull it without credentials.
 
 The dashboard is served internally on port `8080` for ingress. The add-on does not publish a host port by default.
 

@@ -937,7 +937,6 @@
             const printer = data.selected_printer || {};
             const pauseService = printer.pause_service || {};
             document.getElementById('config-content').innerHTML = `
-                <div class="status-item"><label>External Base URL</label><span class="value">${esc(data.external_base_url || 'Not configured')}</span></div>
                 <div class="status-item"><label>Timezone</label><span class="value">${esc(data.timezone)}</span></div>
                 <div class="status-item"><label>Home Assistant API</label><span class="value">${esc(data.home_assistant_url)}</span></div>
                 <div class="status-item"><label>Selected Printer</label><span class="value">${esc(printer.name || 'Unknown')}</span></div>

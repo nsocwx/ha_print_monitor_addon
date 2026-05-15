@@ -177,7 +177,7 @@ class AppConfig(BaseSettings):
     """Main application configuration."""
     app_base_url: str = ""
     external_base_url: Optional[str] = None
-    timezone: str = "UTC"
+    timezone: str = ""
     home_assistant: HomeAssistantConfig = Field(default_factory=HomeAssistantConfig)
     printers: List[PrinterConfig] = Field(default_factory=list)
     monitoring: MonitoringConfig = Field(default_factory=MonitoringConfig)
