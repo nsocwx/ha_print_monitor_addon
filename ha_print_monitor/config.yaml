@@ -1,7 +1,7 @@
 name: "HA Print Monitor"
 slug: "ha_print_monitor"
 description: "Monitor 3D prints with Home Assistant cameras, model analysis, notifications, and safe pause actions."
-version: "0.3.2"
+version: "0.3.5"
 arch:
   - amd64
   - aarch64

@@ -6,6 +6,4 @@ if [ -z "${SUPERVISOR_TOKEN:-}" ]; then
   exit 1
 fi
 
-mkdir -p /data/captures /data/logs /data/backups /data/models
-
 exec uvicorn main:app --host 0.0.0.0 --port 8080 --proxy-headers

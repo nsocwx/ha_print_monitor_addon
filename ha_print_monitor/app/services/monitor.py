@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 
 DATA_DIR = Path("/data")
 CAPTURES_DIR = DATA_DIR / "captures"
+FALLBACK_CAPTURES_DIR = Path("/tmp/ha-print-monitor/captures")
 
 
 class PrintMonitorService:
@@ -70,7 +71,21 @@ class PrintMonitorService:
         self.pending_detection_count = 0
         self.pending_issue_type: Optional[str] = None
 
-        CAPTURES_DIR.mkdir(parents=True, exist_ok=True)
+        self.captures_dir = self._prepare_captures_dir()
+
+    def _prepare_captures_dir(self) -> Path:
+        try:
+            CAPTURES_DIR.mkdir(parents=True, exist_ok=True)
+            return CAPTURES_DIR
+        except OSError as exc:
+            logger.warning(
+                "Cannot write captures to %s; using temporary storage at %s: %s",
+                CAPTURES_DIR,
+                FALLBACK_CAPTURES_DIR,
+                exc,
+            )
+            FALLBACK_CAPTURES_DIR.mkdir(parents=True, exist_ok=True)
+            return FALLBACK_CAPTURES_DIR
 
     async def start(self):
         """Start monitoring."""
@@ -145,7 +160,7 @@ class PrintMonitorService:
 
             # Save capture
             capture_id = f"capture_{self.printer_id}_{uuid.uuid4().hex[:8]}"
-            capture_path = CAPTURES_DIR / f"{capture_id}.jpg"
+            capture_path = self.captures_dir / f"{capture_id}.jpg"
             try:
                 capture_path.write_bytes(image_data)
             except OSError as e:

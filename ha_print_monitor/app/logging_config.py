@@ -51,9 +51,6 @@ def setup_logging(
         app_name: Application name for logs
         json_output: Use JSON formatter if True
     """
-    # Create logs directory
-    LOGS_DIR.mkdir(parents=True, exist_ok=True)
-
     # Create logger
     logger = logging.getLogger()
     level = getattr(logging, log_level.upper(), logging.INFO)
@@ -78,25 +75,29 @@ def setup_logging(
     console_handler.setFormatter(console_formatter)
     logger.addHandler(console_handler)
 
-    # File handler (rotating)
-    log_file = LOGS_DIR / f"{app_name}.log"
-    file_handler = logging.handlers.RotatingFileHandler(
-        log_file,
-        maxBytes=10 * 1024 * 1024,  # 10MB
-        backupCount=5,
-    )
-    file_handler.setLevel(level)
-
-    if json_output:
-        file_formatter = JSONFormatter()
-    else:
-        file_formatter = logging.Formatter(
-            "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-            datefmt="%Y-%m-%d %H:%M:%S",
+    # File logging is best-effort because /data is a Supervisor-managed mount.
+    try:
+        LOGS_DIR.mkdir(parents=True, exist_ok=True)
+        log_file = LOGS_DIR / f"{app_name}.log"
+        file_handler = logging.handlers.RotatingFileHandler(
+            log_file,
+            maxBytes=10 * 1024 * 1024,  # 10MB
+            backupCount=5,
         )
+        file_handler.setLevel(level)
 
-    file_handler.setFormatter(file_formatter)
-    logger.addHandler(file_handler)
+        if json_output:
+            file_formatter = JSONFormatter()
+        else:
+            file_formatter = logging.Formatter(
+                "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+                datefmt="%Y-%m-%d %H:%M:%S",
+            )
+
+        file_handler.setFormatter(file_formatter)
+        logger.addHandler(file_handler)
+    except OSError as exc:
+        logger.warning("File logging disabled; cannot write to %s: %s", LOGS_DIR, exc)
 
     # Suppress noisy loggers
     logging.getLogger("urllib3").setLevel(logging.WARNING)

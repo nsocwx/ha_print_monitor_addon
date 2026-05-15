@@ -8,6 +8,8 @@ from datetime import datetime, timezone
 class TimestampedResponse(BaseModel):
     """Base response that serializes naive app datetimes as UTC."""
 
+    model_config = {"protected_namespaces": ()}
+
     @field_serializer("*", when_used="json", check_fields=False)
     def serialize_datetimes(self, value):
         if isinstance(value, datetime):

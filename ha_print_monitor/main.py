@@ -204,8 +204,7 @@ async def health_check() -> HealthResponse:
     addon_checks = [
         bool(os.getenv("SUPERVISOR_TOKEN")),
         DATA_DIR.exists(),
-        (DATA_DIR / "captures").exists(),
-        config is not None and config.home_assistant.url == "http://supervisor/core/api",
+        config is not None and config.home_assistant.url == "http://supervisor/core",
     ]
     addon_status = "healthy" if all(addon_checks) else "unhealthy"
 

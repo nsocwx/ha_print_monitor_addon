@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 DATA_DIR = Path(os.getenv("DATA_DIR", "/data"))
 OPTIONS_FILE = Path(os.getenv("OPTIONS_PATH", str(DATA_DIR / "options.json")))
 CONFIG_FILE = OPTIONS_FILE
-HA_API_URL = "http://supervisor/core/api"
+HA_API_URL = "http://supervisor/core"
 HA_WS_URL = "ws://supervisor/core/websocket"
 
 
