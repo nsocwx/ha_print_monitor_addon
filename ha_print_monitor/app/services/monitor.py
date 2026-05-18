@@ -5,6 +5,7 @@ import uuid
 import json
 import time
 import httpx
+import shutil
 from io import BytesIO
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -23,6 +24,8 @@ logger = logging.getLogger(__name__)
 DATA_DIR = Path("/data")
 CAPTURES_DIR = DATA_DIR / "captures"
 FALLBACK_CAPTURES_DIR = Path("/tmp/ha-print-monitor/captures")
+MEDIA_NOTIFICATION_DIR = Path("/media/ha_print_monitor")
+MEDIA_NOTIFICATION_URL_PREFIX = "/media/local/ha_print_monitor"
 
 
 class PrintMonitorService:
@@ -514,14 +517,13 @@ class PrintMonitorService:
             notify_services = self.printer.notify_services or self.config.home_assistant.notify_services
             for notify_service in notify_services:
                 from app.security import create_action_token
+                from app.services.notification_actions import build_notification_action
 
-                # Construct external notification links only when the user supplied
-                # a reachable public base URL. Never log these full URLs.
+                # Mobile action taps are delivered back to Home Assistant as events.
+                # The add-on websocket listener consumes these signed one-time tokens.
                 pause_token = create_action_token(self.config, event.event_id, "pause", event.printer_id)
                 ignore_token = create_action_token(self.config, event.event_id, "ignore", event.printer_id)
                 snooze_token = create_action_token(self.config, event.event_id, "snooze", event.printer_id)
-                external_base_url = (self.config.external_base_url or "").rstrip("/")
-
                 # Build notification data
                 title = f"Possible Print Issue Detected: {self.printer_name}"
                 message = (
@@ -538,31 +540,26 @@ class PrintMonitorService:
                         f"\n\nAuto-pause in {time_remaining:.0f} minutes unless ignored."
                     )
 
-                data = {}
-                if external_base_url:
-                    data = {
-                        "image": f"{external_base_url}/captures/{Path(event.image_path).name}",
-                        "actions": [
-                            {
-                                "action": "URI",
-                                "title": "Pause Print",
-                                "uri": f"{external_base_url}/api/actions/pause?token={pause_token}",
-                            },
-                            {
-                                "action": "URI",
-                                "title": "Ignore",
-                                "uri": f"{external_base_url}/api/actions/ignore?token={ignore_token}",
-                            },
-                            {
-                                "action": "URI",
-                                "title": f"Snooze {self.config.monitoring.snooze_minutes}m",
-                                "uri": (
-                                    f"{external_base_url}/api/actions/snooze"
-                                    f"?token={snooze_token}&minutes={self.config.monitoring.snooze_minutes}"
-                                ),
-                            },
-                        ],
-                    }
+                data = {
+                    "actions": [
+                        {
+                            "action": build_notification_action("pause", pause_token),
+                            "title": "Pause Print",
+                            "destructive": True,
+                        },
+                        {
+                            "action": build_notification_action("ignore", ignore_token),
+                            "title": "Ignore",
+                        },
+                        {
+                            "action": build_notification_action("snooze", snooze_token),
+                            "title": f"Snooze {self.config.monitoring.snooze_minutes}m",
+                        },
+                    ],
+                }
+                image_url = self._prepare_notification_image(event)
+                if image_url:
+                    data["image"] = image_url
 
                 await self.ha_service.send_notification(
                     service=notify_service,
@@ -575,6 +572,33 @@ class PrintMonitorService:
 
         except Exception as e:
             logger.error(f"Failed to send notification: {e}")
+
+    def _prepare_notification_image(self, event: PrinterEvent) -> Optional[str]:
+        """Copy an event image into HA local media and return its media_source URL."""
+        if not event.image_path:
+            return None
+
+        source_path = Path(event.image_path)
+        if not source_path.is_file():
+            logger.warning(
+                "Notification image for event %s is missing: %s",
+                event.event_id,
+                source_path,
+            )
+            return None
+
+        try:
+            MEDIA_NOTIFICATION_DIR.mkdir(parents=True, exist_ok=True)
+            destination = MEDIA_NOTIFICATION_DIR / source_path.name
+            shutil.copy2(source_path, destination)
+            return f"{MEDIA_NOTIFICATION_URL_PREFIX}/{destination.name}"
+        except Exception as exc:
+            logger.warning(
+                "Could not publish notification image for event %s to Home Assistant media: %s",
+                event.event_id,
+                exc,
+            )
+            return None
 
     async def _send_auto_pause_notification(self, event: PrinterEvent, session: Session):
         """Send notification that print was auto-paused."""

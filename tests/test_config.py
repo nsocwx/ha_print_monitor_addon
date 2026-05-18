@@ -15,10 +15,9 @@ def test_load_config_defaults():
 def test_config_serialization():
     """Test config can be serialized."""
     config = AppConfig()
-    config.external_base_url = "https://example.ui"
 
-    assert config.home_assistant.url == "http://supervisor/core/api"
-    assert config.external_base_url == "https://example.ui"
+    assert config.home_assistant.url == "http://supervisor/core"
+    assert config.home_assistant.websocket_url == "ws://supervisor/core/websocket"
 
 
 def test_pause_service_config():

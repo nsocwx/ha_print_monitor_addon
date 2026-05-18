@@ -5,7 +5,7 @@ import hmac
 import json
 import secrets
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from sqlmodel import Session, select
@@ -41,6 +41,13 @@ def _secret(config: AppConfig) -> bytes:
     return config.security.action_signing_secret.encode("utf-8")
 
 
+def _utc_timestamp(value: datetime) -> int:
+    """Convert a naive or aware UTC datetime to an integer timestamp."""
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return int(value.timestamp())
+
+
 def create_action_token(
     config: AppConfig,
     event_id: str,
@@ -56,7 +63,7 @@ def create_action_token(
         "event_id": event_id,
         "action": action,
         "printer_id": printer_id,
-        "exp": int(expiry.timestamp()),
+        "exp": _utc_timestamp(expiry),
         "nonce": secrets.token_urlsafe(18),
     }
     payload_bytes = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
@@ -87,7 +94,7 @@ def verify_action_token(
         action = str(payload["action"])
         printer_id = str(payload["printer_id"])
         nonce = str(payload["nonce"])
-        expires_at = datetime.utcfromtimestamp(int(payload["exp"]))
+        expires_at = datetime.fromtimestamp(int(payload["exp"]), timezone.utc).replace(tzinfo=None)
     except (ValueError, KeyError, TypeError, json.JSONDecodeError):
         raise ActionTokenError("Invalid action token") from None
 

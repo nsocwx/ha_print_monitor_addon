@@ -8,6 +8,8 @@ from app.core.config import AppConfig
 
 logger = logging.getLogger(__name__)
 
+MEDIA_NOTIFICATION_DIR = Path("/media/ha_print_monitor")
+
 
 async def cleanup_old_data(config: AppConfig, session: Session):
     """Clean up old events and images based on retention policy.
@@ -30,13 +32,13 @@ async def cleanup_old_data(config: AppConfig, session: Session):
         # Clean up associated images
         if event.image_path:
             try:
-                Path(event.image_path).unlink(missing_ok=True)
+                _delete_capture_file_and_notification_media(event.image_path)
             except Exception as e:
                 logger.warning(f"Failed to delete image {event.image_path}: {e}")
 
         if event.annotated_image_path:
             try:
-                Path(event.annotated_image_path).unlink(missing_ok=True)
+                _delete_capture_file_and_notification_media(event.annotated_image_path)
             except Exception as e:
                 logger.warning(f"Failed to delete annotated image: {e}")
 
@@ -46,6 +48,54 @@ async def cleanup_old_data(config: AppConfig, session: Session):
     if deleted_count > 0:
         session.commit()
         logger.info(f"Deleted {deleted_count} old events")
+
+    cutoff_event_images = now - timedelta(days=retention_config.keep_event_captures_days)
+    old_event_image_captures = session.exec(
+        select(CameraCapture).where(
+            CameraCapture.event_id != None,  # noqa: E711
+            CameraCapture.captured_at < cutoff_event_images,
+        )
+    ).all()
+
+    deleted_event_images = 0
+    for capture in old_event_image_captures:
+        try:
+            _delete_capture_file_and_notification_media(capture.file_path)
+            event = session.exec(
+                select(PrinterEvent).where(PrinterEvent.event_id == capture.event_id)
+            ).first()
+            if event and event.image_path == capture.file_path:
+                event.image_path = None
+                session.add(event)
+            session.delete(capture)
+            deleted_event_images += 1
+        except Exception as e:
+            logger.warning("Failed to delete event capture %s: %s", capture.capture_id, e)
+
+    old_events_with_images = session.exec(
+        select(PrinterEvent).where(
+            PrinterEvent.created_at < cutoff_event_images,
+            PrinterEvent.image_path != None,  # noqa: E711
+        )
+    ).all()
+    for event in old_events_with_images:
+        try:
+            _delete_capture_file_and_notification_media(event.image_path)
+            event.image_path = None
+            if event.annotated_image_path:
+                _delete_capture_file_and_notification_media(event.annotated_image_path)
+                event.annotated_image_path = None
+            session.add(event)
+        except Exception as e:
+            logger.warning("Failed to clear old event images for %s: %s", event.event_id, e)
+
+    if deleted_event_images or old_events_with_images:
+        session.commit()
+        logger.info(
+            "Deleted %s old event capture records and cleared images from %s events",
+            deleted_event_images,
+            len(old_events_with_images),
+        )
 
     cutoff_clear_results = now - timedelta(hours=retention_config.keep_clear_captures_hours)
     old_results = session.exec(
@@ -82,6 +132,7 @@ async def cleanup_old_data(config: AppConfig, session: Session):
         session.commit()
         logger.info(f"Deleted {deleted_images} old capture images")
 
+    await cleanup_notification_media(config)
     await enforce_capture_storage_limit(config, session)
 
     # Cleanup old logs
@@ -131,3 +182,38 @@ async def enforce_capture_storage_limit(config: AppConfig, session: Session):
     if deleted:
         session.commit()
         logger.warning("Deleted %s old non-event captures to enforce disk limit", deleted)
+
+
+async def cleanup_notification_media(config: AppConfig):
+    """Delete old Home Assistant media copies used for notification images."""
+    if not MEDIA_NOTIFICATION_DIR.exists():
+        return
+
+    cutoff = datetime.utcnow() - timedelta(days=config.retention.keep_event_captures_days)
+    deleted = 0
+    for path in MEDIA_NOTIFICATION_DIR.glob("*"):
+        if not path.is_file():
+            continue
+        modified_at = datetime.utcfromtimestamp(path.stat().st_mtime)
+        if modified_at >= cutoff:
+            continue
+        try:
+            path.unlink()
+            deleted += 1
+        except Exception as exc:
+            logger.warning("Failed to delete notification media %s: %s", path, exc)
+
+    if deleted:
+        logger.info("Deleted %s old notification media files", deleted)
+
+
+def _delete_capture_file_and_notification_media(image_path: str):
+    """Delete a capture and the matching Home Assistant media notification copy."""
+    path = Path(image_path)
+    path.unlink(missing_ok=True)
+    _notification_media_path_for_image(image_path).unlink(missing_ok=True)
+
+
+def _notification_media_path_for_image(image_path: str) -> Path:
+    """Return the media copy path used for a capture image."""
+    return MEDIA_NOTIFICATION_DIR / Path(image_path).name

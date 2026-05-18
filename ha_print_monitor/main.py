@@ -28,6 +28,7 @@ from app.api.schemas import (
 )
 from app.services.monitor import PrintMonitorService
 from app.services.home_assistant import HAService
+from app.services.notification_actions import HomeAssistantNotificationActionListener
 from app.version import APP_VERSION, BUILD_DATE, GIT_COMMIT
 from app.logging_config import setup_logging
 from app.maintenance import cleanup_old_data
@@ -45,12 +46,15 @@ monitor_services: dict[str, PrintMonitorService] = {}
 app_start_time: datetime = datetime.utcnow()
 monitoring_task: asyncio.Task = None
 maintenance_task: asyncio.Task = None
+notification_action_listener: HomeAssistantNotificationActionListener = None
+notification_action_task: asyncio.Task = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan context manager for startup and shutdown."""
     global config, monitor_services, monitoring_task, maintenance_task
+    global notification_action_listener, notification_action_task
 
     # Startup
     logger.info("Starting HA Print Monitor")
@@ -131,6 +135,9 @@ async def lifespan(app: FastAPI):
 
     monitoring_task = asyncio.create_task(run_monitoring())
 
+    notification_action_listener = HomeAssistantNotificationActionListener(config)
+    notification_action_task = asyncio.create_task(notification_action_listener.run_forever())
+
     async def run_maintenance():
         while True:
             try:
@@ -157,6 +164,14 @@ async def lifespan(app: FastAPI):
         maintenance_task.cancel()
         try:
             await maintenance_task
+        except asyncio.CancelledError:
+            pass
+    if notification_action_listener:
+        await notification_action_listener.stop()
+    if notification_action_task:
+        notification_action_task.cancel()
+        try:
+            await notification_action_task
         except asyncio.CancelledError:
             pass
 
@@ -434,7 +449,6 @@ async def diagnostics() -> dict:
         },
         "config": {
             "app_base_url": config.app_base_url,
-            "external_base_url": config.external_base_url,
             "timezone": config.timezone,
             "home_assistant_url": "Supervisor Core API",
             "monitoring": config.monitoring.model_dump(),

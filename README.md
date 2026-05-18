@@ -59,7 +59,6 @@ Long-lived access tokens are only relevant for the standalone Docker version, no
 Configure options in the Home Assistant add-on Configuration tab. Example:
 
 ```yaml
-external_base_url: null
 printers:
   - printer_id: mk4s
     name: MK4s
@@ -108,13 +107,13 @@ advanced:
 
 Runtime data is stored under `/data`, including the SQLite database, captures, logs, backups, and model files.
 
-## Ingress And Mobile Links
+## Ingress And Mobile Notifications
 
 Ingress is excellent for using the dashboard inside Home Assistant. Browser API calls, static assets, and capture images use relative URLs so they work when Home Assistant mounts the add-on under an ingress path.
 
-Mobile push notification images and action URLs are different: phones may need a URL reachable from the phone's network. Set `external_base_url` to an externally reachable trusted URL if you want notification images and action links. This could be Home Assistant Cloud/Nabu Casa, a reverse proxy, or another trusted route to the add-on.
+Mobile notification images are published through Home Assistant local media. The add-on copies the event frame into the mapped `/media/ha_print_monitor` directory and sends the Companion app a relative `/media/local/ha_print_monitor/...` image URL, so Home Assistant handles access through its own app connection.
 
-If `external_base_url` is not configured, notifications can still be sent, but image previews and action links may be omitted or may not work outside the Home Assistant UI.
+Notification action buttons use the same Home Assistant-native path. The add-on sends Companion action IDs and listens for `mobile_app_notification_action` events over the Supervisor websocket proxy, then consumes the signed one-time action token inside the add-on.
 
 ## Safe Pause Testing
 
@@ -128,7 +127,7 @@ If `external_base_url` is not configured, notifications can still be sent, but i
 - **HA API 401/403**: Confirm the add-on is running under Home Assistant Supervisor and `homeassistant_api: true` is present. Restart the add-on so Home Assistant injects `SUPERVISOR_TOKEN`.
 - **Camera capture fails**: Check that `camera_entity` exists, returns an image through Home Assistant, and responds before `capture_timeout_seconds`.
 - **Entity not found**: Verify the exact entity IDs in Developer Tools -> States.
-- **Notification image not showing**: Configure `external_base_url` with a phone-reachable URL. Ingress-only URLs often are not usable by push notification clients.
+- **Notification image not showing**: Confirm the add-on has the `media:rw` map and that Home Assistant local media is enabled. Images are sent as `/media/local/ha_print_monitor/...` paths.
 - **Ingress path issues**: Refresh the dashboard and confirm you opened it via **Open Web UI**. The UI uses relative fetch and image URLs.
 - **Model load failure**: Confirm `model.provider`, `model_path`, and CPU/CUDA device settings. Put ONNX models under `/data/models`.
 

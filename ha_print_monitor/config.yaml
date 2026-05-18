@@ -1,7 +1,7 @@
 name: "HA Print Monitor"
 slug: "ha_print_monitor"
 description: "Monitor 3D prints with Home Assistant cameras, model analysis, notifications, and safe pause actions."
-version: "0.3.10"
+version: "0.3.11"
 image: ghcr.io/nsocwx/ha_print_monitor_addon
 arch:
   - amd64
@@ -17,6 +17,7 @@ homeassistant_api: true
 map:
   - addon_config:rw
   - data:rw
+  - media:rw
 options:
   printers:
     - printer_id: mk4s

@@ -176,7 +176,6 @@ class ProxyConfig(BaseSettings):
 class AppConfig(BaseSettings):
     """Main application configuration."""
     app_base_url: str = ""
-    external_base_url: Optional[str] = None
     timezone: str = ""
     home_assistant: HomeAssistantConfig = Field(default_factory=HomeAssistantConfig)
     printers: List[PrinterConfig] = Field(default_factory=list)
@@ -193,6 +192,7 @@ class AppConfig(BaseSettings):
 
     class Config:
         env_file = str(DATA_DIR / ".env")
+        extra = "ignore"
 
     @field_validator("home_assistant", mode="before")
     @classmethod

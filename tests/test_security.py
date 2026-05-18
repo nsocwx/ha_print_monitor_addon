@@ -42,7 +42,7 @@ def test_action_token_rejects_wrong_action_and_expiration():
         "event_1",
         "pause",
         "printer_1",
-        expires_at=datetime.utcnow() - timedelta(seconds=1),
+        expires_at=datetime.utcnow() - timedelta(hours=1),
     )
 
     with pytest.raises(ActionTokenError):
