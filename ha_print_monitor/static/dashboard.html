@@ -437,6 +437,14 @@
             return `${clamped.toFixed(clamped % 1 === 0 ? 0 : 1)}%`;
         }
 
+        function formatPrintState(status) {
+            const state = status.printer_state || 'Unknown';
+            if (status.print_progress === null || status.print_progress === undefined) {
+                return state;
+            }
+            return `${state} (${formatProgress(status.print_progress)})`;
+        }
+
         function imageUrlFromPath(path) {
             if (!path) return null;
             return `${API_BASE}/captures/${encodeURIComponent(path.split(/[\\/]/).pop())}`;
@@ -575,14 +583,8 @@
                 </div>
                 <div class="banner-item">
                     <label>Print State</label>
-                    <strong>${esc(status.printer_state || 'Unknown')}</strong>
+                    <strong>${esc(formatPrintState(status))}</strong>
                 </div>
-                ${status.print_progress !== null && status.print_progress !== undefined ? `
-                    <div class="banner-item">
-                        <label>Progress</label>
-                        <strong>${formatProgress(status.print_progress)}</strong>
-                    </div>
-                ` : ''}
                 <div class="banner-item">
                     <label>Monitoring</label>
                     <strong>${status.monitoring_enabled ? 'Enabled' : 'Disabled'}</strong>
@@ -606,18 +608,12 @@
                 </div>
                 <div class="status-item">
                     <label>Printer State</label>
-                    <span class="value">${esc(status.printer_state || 'Unknown')}</span>
+                    <span class="value">${esc(formatPrintState(status))}</span>
                 </div>
                 <div class="status-item">
                     <label>Printing</label>
                     <span class="status-badge ${status.printer_printing ? 'healthy' : 'unhealthy'}">${status.printer_printing ? 'Yes' : 'No'}</span>
                 </div>
-                ${status.print_progress !== null && status.print_progress !== undefined ? `
-                    <div class="status-item">
-                        <label>Print Progress</label>
-                        <span class="value">${formatProgress(status.print_progress)}</span>
-                    </div>
-                ` : ''}
                 <div class="status-item">
                     <label>Last Capture</label>
                     <span class="value">${esc(formatDateTime(status.last_capture_time))}</span>
