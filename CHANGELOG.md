@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.12
+
+- Fixed Home Assistant pause service calls to send `entity_id` as service data for `button.press`.
+- Fixed flattened add-on pause options so `pause_service_target` maps to the selected printer pause service.
+- Fixed ignored, snoozed, paused, and resolved events continuing to appear as active issues with action buttons.
+
 ## 0.3.11
 
 - Removed the external notification URL setting entirely.

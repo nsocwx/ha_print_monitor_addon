@@ -64,7 +64,17 @@ class PrinterConfig(BaseSettings):
         return v
 
     def model_post_init(self, __context: Any) -> None:
-        if not any([self.pause_service_target, self.pause_service_data_json]):
+        if self.printer_id and self.id == "default":
+            self.id = self.printer_id
+
+        if not any(
+            [
+                self.pause_service_domain,
+                self.pause_service_service,
+                self.pause_service_target,
+                self.pause_service_data_json,
+            ]
+        ):
             return
 
         data = {}
@@ -77,8 +87,8 @@ class PrinterConfig(BaseSettings):
                 raise ValueError("pause_service_data_json must decode to a JSON object")
 
         self.pause_service = PauseServiceConfig(
-            domain="button",
-            service="press",
+            domain=self.pause_service_domain or self.pause_service.domain,
+            service=self.pause_service_service or self.pause_service.service,
             target=self.pause_service_target or self.pause_service.target,
             data=data or self.pause_service.data,
         )

@@ -31,6 +31,26 @@ def test_pause_service_config():
     assert config.home_assistant.pause_service.target == "button.pause"
 
 
+def test_addon_printer_pause_service_target_alias():
+    """Flattened add-on pause options should populate the service call config."""
+    config = AppConfig(
+        printers=[
+            {
+                "printer_id": "mk25s",
+                "name": "MK2.5s",
+                "pause_service_target": "button.octoprint_pause_job",
+            }
+        ]
+    )
+
+    printer = config.get_printer("mk25s")
+    assert printer is not None
+    assert printer.id == "mk25s"
+    assert printer.pause_service.domain == "button"
+    assert printer.pause_service.service == "press"
+    assert printer.pause_service.target == "button.octoprint_pause_job"
+
+
 def test_monitoring_thresholds():
     """Test monitoring threshold configuration."""
     config = AppConfig()

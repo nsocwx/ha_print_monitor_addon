@@ -191,7 +191,7 @@ class HAService:
         try:
             payload = service_data or {}
             if target:
-                payload["target"] = target
+                payload.update(target)
 
             resp = await self._request(
                 "POST",

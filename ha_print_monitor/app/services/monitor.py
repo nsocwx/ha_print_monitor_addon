@@ -643,7 +643,7 @@ class PrintMonitorService:
                 select(PrinterEvent).where(PrinterEvent.event_id == event_id)
             ).first()
 
-            if event and event.status not in ("resolved", "paused"):
+            if event and event.status not in ("resolved", "paused", "ignored", "snoozed"):
                 event.status = "resolved"
                 event.resolved_at = datetime.utcnow()
                 event.add_action("auto_resolved", {})

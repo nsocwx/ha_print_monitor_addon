@@ -29,6 +29,7 @@ from app.api.schemas import (
 from app.services.monitor import PrintMonitorService
 from app.services.home_assistant import HAService
 from app.services.notification_actions import HomeAssistantNotificationActionListener
+from app.event_status import is_active_event_status
 from app.version import APP_VERSION, BUILD_DATE, GIT_COMMIT
 from app.logging_config import setup_logging
 from app.maintenance import cleanup_old_data
@@ -276,7 +277,6 @@ def _active_event_response(
     session: Session,
 ) -> Optional[EventResponse]:
     """Get active event response for one monitor service."""
-    """Get current application status."""
     if service.active_event_id:
         from sqlmodel import select
         from app.models.event import PrinterEvent
@@ -287,7 +287,7 @@ def _active_event_response(
             )
         ).first()
 
-        if event:
+        if event and is_active_event_status(event.status):
             return EventResponse(**event.dict())
 
     return None
