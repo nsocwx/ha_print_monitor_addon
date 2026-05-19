@@ -38,6 +38,7 @@ def test_addon_printer_pause_service_target_alias():
             {
                 "printer_id": "mk25s",
                 "name": "MK2.5s",
+                "print_progress_entity": "sensor.octoprint_job_percentage",
                 "pause_service_target": "button.octoprint_pause_job",
             }
         ]
@@ -49,6 +50,7 @@ def test_addon_printer_pause_service_target_alias():
     assert printer.pause_service.domain == "button"
     assert printer.pause_service.service == "press"
     assert printer.pause_service.target == "button.octoprint_pause_job"
+    assert printer.print_progress_entity == "sensor.octoprint_job_percentage"
 
 
 def test_monitoring_thresholds():

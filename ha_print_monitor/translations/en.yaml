@@ -18,6 +18,9 @@ configuration:
       printer_state_entity:
         name: Printer state entity
         description: Entity whose state indicates whether the printer is currently printing.
+      print_progress_entity:
+        name: Print progress entity
+        description: Optional entity whose state is the print job progress percentage.
       printing_states:
         name: Printing states
         description: State values that mean the printer is actively printing.
@@ -43,8 +46,6 @@ configuration:
         name: Auto-pause certainty threshold
       auto_pause_delay_minutes:
         name: Auto-pause delay minutes
-      snooze_minutes:
-        name: Snooze minutes
       cooldown_minutes:
         name: Cooldown minutes
   model:

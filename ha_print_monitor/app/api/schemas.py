@@ -58,6 +58,7 @@ class StatusResponse(TimestampedResponse):
     running: bool
     monitoring_enabled: bool
     printer_state: Optional[str]
+    print_progress: Optional[float] = None
     printer_printing: bool
     last_capture_time: Optional[datetime]
     last_capture_image_url: Optional[str]
@@ -82,9 +83,11 @@ class PrinterStatusResponse(TimestampedResponse):
     printer_name: str
     camera_entity: str
     printer_state_entity: str
+    print_progress_entity: Optional[str] = None
     running: bool
     monitoring_enabled: bool
     printer_state: Optional[str]
+    print_progress: Optional[float] = None
     printer_printing: bool
     last_capture_time: Optional[datetime]
     last_capture_image_url: Optional[str]
@@ -124,6 +127,7 @@ class ConfigResponse(BaseModel):
     home_assistant_url: str
     camera_entity: str
     printer_state_entity: str
+    print_progress_entity: Optional[str] = None
     selected_printer: Dict[str, Any]
     analyzer_provider: str
     analyzer_device: str

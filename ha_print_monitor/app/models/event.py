@@ -31,7 +31,7 @@ class PrinterEvent(SQLModel, table=True):
     annotated_image_path: Optional[str] = None
 
     # Status tracking
-    status: str = Field(default="active")  # active, acknowledged, ignored, snoozed, paused, resolved
+    status: str = Field(default="active")  # active, pending_pause, ignored, paused, resolved
     recommended_action: str  # continue, notify, pause
     first_seen_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
     last_seen_at: Optional[datetime] = Field(default_factory=datetime.utcnow)

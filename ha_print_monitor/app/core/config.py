@@ -33,6 +33,7 @@ class HomeAssistantConfig(BaseSettings):
     token: str = Field(default="", repr=False)
     camera_entity: str = "camera.printer"
     printer_state_entity: str = "sensor.printer_status"
+    print_progress_entity: Optional[str] = None
     printing_states: List[str] = ["printing"]
     pause_service: PauseServiceConfig = Field(default_factory=PauseServiceConfig)
     notify_services: List[str] = Field(default_factory=lambda: ["notify.mobile_app_phone"])
@@ -46,6 +47,7 @@ class PrinterConfig(BaseSettings):
     enabled: bool = True
     camera_entity: str = "camera.printer"
     printer_state_entity: str = "sensor.printer_status"
+    print_progress_entity: Optional[str] = None
     printing_states: List[str] = ["printing"]
     pause_service: PauseServiceConfig = Field(default_factory=PauseServiceConfig)
     pause_service_domain: Optional[str] = None
@@ -104,7 +106,6 @@ class MonitoringConfig(BaseSettings):
     certainty_threshold_auto_pause: float = 0.85
     auto_pause_delay_minutes: int = 15
     cooldown_minutes: int = 10
-    snooze_minutes: int = 15
     min_analysis_interval_seconds: int = 0
     confirmation_window_minutes: int = 5
     required_issue_consistency: bool = True
@@ -272,6 +273,7 @@ class AppConfig(BaseSettings):
                 name="Default Printer",
                 camera_entity=self.home_assistant.camera_entity,
                 printer_state_entity=self.home_assistant.printer_state_entity,
+                print_progress_entity=self.home_assistant.print_progress_entity,
                 printing_states=self.home_assistant.printing_states,
                 pause_service=self.home_assistant.pause_service,
                 notify_services=self.home_assistant.notify_services,

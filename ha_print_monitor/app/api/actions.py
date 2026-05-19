@@ -1,6 +1,6 @@
 """API routes for operator and notification actions."""
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/actions", tags=["actions"])
 
-PROTECTED_ACTIONS = {"pause", "acknowledge", "snooze", "ignore"}
+PROTECTED_ACTIONS = {"pause", "ignore"}
 
 
 class TokenResponse(BaseModel):
@@ -306,70 +306,3 @@ def ignore_event_from_notification(
     return ignore_event(token=token, session=session, config=config)
 
 
-@router.post("/snooze", response_model=ActionResponse)
-def snooze_event(
-    minutes: int = Query(15),
-    token: str = Query(...),
-    session: Session = Depends(get_session),
-    config: AppConfig = Depends(get_app_config),
-) -> ActionResponse:
-    """Snooze notifications for an event."""
-    event = _consume_action_token("snooze", token, session, config)
-    event.status = "snoozed"
-    event.snoozed_until = datetime.utcnow() + timedelta(minutes=minutes)
-    event.auto_pause_deadline = None
-    event.user_action = "snooze"
-    event.user_action_at = datetime.utcnow()
-    event.add_action("snooze", {"minutes": minutes, "until": event.snoozed_until.isoformat()})
-    session.add(event)
-    session.commit()
-    return ActionResponse(
-        success=True,
-        action="snooze",
-        event_id=event.event_id,
-        message=f"Event snoozed for {minutes} minutes",
-    )
-
-
-@router.get("/snooze", response_model=ActionResponse)
-def snooze_event_from_notification(
-    minutes: int = Query(15),
-    token: str = Query(...),
-    session: Session = Depends(get_session),
-    config: AppConfig = Depends(get_app_config),
-) -> ActionResponse:
-    """Notification-compatible GET action."""
-    return snooze_event(minutes=minutes, token=token, session=session, config=config)
-
-
-@router.post("/acknowledge", response_model=ActionResponse)
-def acknowledge_event(
-    token: str = Query(...),
-    session: Session = Depends(get_session),
-    config: AppConfig = Depends(get_app_config),
-) -> ActionResponse:
-    """Acknowledge an event without ignoring it."""
-    event = _consume_action_token("acknowledge", token, session, config)
-    event.status = "acknowledged"
-    event.auto_pause_deadline = None
-    event.user_action = "acknowledge"
-    event.user_action_at = datetime.utcnow()
-    event.add_action("acknowledge")
-    session.add(event)
-    session.commit()
-    return ActionResponse(
-        success=True,
-        action="acknowledge",
-        event_id=event.event_id,
-        message="Event acknowledged",
-    )
-
-
-@router.get("/acknowledge", response_model=ActionResponse)
-def acknowledge_event_from_notification(
-    token: str = Query(...),
-    session: Session = Depends(get_session),
-    config: AppConfig = Depends(get_app_config),
-) -> ActionResponse:
-    """Notification-compatible GET action."""
-    return acknowledge_event(token=token, session=session, config=config)

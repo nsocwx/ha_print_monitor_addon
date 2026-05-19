@@ -55,13 +55,13 @@ def test_notification_action_round_trip():
     assert parse_notification_action(action_id) == ("pause", "signed.token")
     assert parse_notification_action("OTHER:pause:signed.token") is None
     assert parse_notification_action(f"{ACTION_PREFIX}:acknowledge:signed.token") is None
+    assert parse_notification_action(f"{ACTION_PREFIX}:snooze:signed.token") is None
 
 
 @pytest.mark.asyncio
 async def test_monitor_sends_native_actions_with_home_assistant_media_image(tmp_path, monkeypatch):
     config = AppConfig()
     config.security.action_signing_secret = "test-secret"
-    config.monitoring.snooze_minutes = 20
     printer = PrinterConfig(
         id="printer_1",
         name="Printer 1",
@@ -85,7 +85,6 @@ async def test_monitor_sends_native_actions_with_home_assistant_media_image(tmp_
     assert [action["title"] for action in data["actions"]] == [
         "Pause Print",
         "Ignore",
-        "Snooze 20m",
     ]
     assert all(
         parse_notification_action(action["action"])

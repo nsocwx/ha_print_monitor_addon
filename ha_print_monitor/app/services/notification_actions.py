@@ -8,7 +8,7 @@ import websockets
 from fastapi import HTTPException
 from sqlmodel import Session
 
-from app.api.actions import ignore_event, pause_print, snooze_event
+from app.api.actions import ignore_event, pause_print
 from app.api.schemas import ActionResponse
 from app.core.config import AppConfig, redact_sensitive
 from app.core.database import SessionLocal
@@ -16,7 +16,7 @@ from app.core.database import SessionLocal
 logger = logging.getLogger(__name__)
 
 ACTION_PREFIX = "HA_PRINT_MONITOR"
-SUPPORTED_ACTIONS = {"pause", "ignore", "snooze"}
+SUPPORTED_ACTIONS = {"pause", "ignore"}
 
 
 def build_notification_action(action: str, token: str) -> str:
@@ -158,11 +158,4 @@ class HomeAssistantNotificationActionListener:
             return await pause_print(token=token, session=session, config=self.config)
         if action == "ignore":
             return ignore_event(token=token, session=session, config=self.config)
-        if action == "snooze":
-            return snooze_event(
-                minutes=self.config.monitoring.snooze_minutes,
-                token=token,
-                session=session,
-                config=self.config,
-            )
         raise HTTPException(status_code=400, detail="Unsupported action")

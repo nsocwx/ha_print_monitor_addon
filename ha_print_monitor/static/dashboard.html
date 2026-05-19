@@ -430,6 +430,13 @@
             return `${minutes}m ${String(seconds).padStart(2, '0')}s`;
         }
 
+        function formatProgress(value) {
+            const numeric = Number(value);
+            if (!Number.isFinite(numeric)) return 'Unknown';
+            const clamped = Math.max(0, Math.min(100, numeric));
+            return `${clamped.toFixed(clamped % 1 === 0 ? 0 : 1)}%`;
+        }
+
         function imageUrlFromPath(path) {
             if (!path) return null;
             return `${API_BASE}/captures/${encodeURIComponent(path.split(/[\\/]/).pop())}`;
@@ -570,6 +577,12 @@
                     <label>Print State</label>
                     <strong>${esc(status.printer_state || 'Unknown')}</strong>
                 </div>
+                ${status.print_progress !== null && status.print_progress !== undefined ? `
+                    <div class="banner-item">
+                        <label>Progress</label>
+                        <strong>${formatProgress(status.print_progress)}</strong>
+                    </div>
+                ` : ''}
                 <div class="banner-item">
                     <label>Monitoring</label>
                     <strong>${status.monitoring_enabled ? 'Enabled' : 'Disabled'}</strong>
@@ -599,6 +612,12 @@
                     <label>Printing</label>
                     <span class="status-badge ${status.printer_printing ? 'healthy' : 'unhealthy'}">${status.printer_printing ? 'Yes' : 'No'}</span>
                 </div>
+                ${status.print_progress !== null && status.print_progress !== undefined ? `
+                    <div class="status-item">
+                        <label>Print Progress</label>
+                        <span class="value">${formatProgress(status.print_progress)}</span>
+                    </div>
+                ` : ''}
                 <div class="status-item">
                     <label>Last Capture</label>
                     <span class="value">${esc(formatDateTime(status.last_capture_time))}</span>
@@ -729,8 +748,6 @@
                     ${imageUrl ? `<img src="${esc(imageUrl)}" alt="Event capture" class="snapshot-image" style="margin-top: 0.8rem;">` : ''}
                     <div class="action-buttons">
                         <button class="btn-danger" data-action="pause">Pause Now</button>
-                        <button class="btn-primary" data-action="acknowledge">Acknowledge</button>
-                        <button class="btn-warning" data-action="snooze">Snooze 15 Minutes</button>
                         <button class="btn-secondary" data-action="ignore">Ignore</button>
                     </div>
                     <div class="optional-actions" id="optional-action-buttons"></div>
@@ -799,8 +816,6 @@
                 ${event ? `
                     <div class="action-buttons">
                         <button class="btn-danger" data-protection-action="pause">Pause Now</button>
-                        <button class="btn-primary" data-protection-action="acknowledge">Acknowledge</button>
-                        <button class="btn-warning" data-protection-action="snooze">Snooze 15 Min</button>
                         <button class="btn-secondary" data-protection-action="ignore">Ignore</button>
                     </div>
                 ` : ''}
@@ -942,6 +957,7 @@
                 <div class="status-item"><label>Selected Printer</label><span class="value">${esc(printer.name || 'Unknown')}</span></div>
                 <div class="status-item"><label>Camera Entity</label><span class="value">${esc(printer.camera_entity || data.camera_entity)}</span></div>
                 <div class="status-item"><label>Printer State Entity</label><span class="value">${esc(printer.printer_state_entity || data.printer_state_entity)}</span></div>
+                <div class="status-item"><label>Print Progress Entity</label><span class="value">${esc(printer.print_progress_entity || data.print_progress_entity || 'Not configured')}</span></div>
                 <div class="status-item"><label>Pause Target</label><span class="value">${esc(pauseService.target || 'Not configured')}</span></div>
                 <div class="status-item"><label>Analyzer Provider</label><span class="value">${esc(data.analyzer_provider)}</span></div>
                 <div class="status-item"><label>Analyzer Device</label><span class="value">${esc(data.analyzer_device)}</span></div>
@@ -972,10 +988,6 @@
             const tokenData = await tokenResp.json();
             const params = new URLSearchParams({ token: tokenData.token });
             let path = `/api/actions/${action}`;
-            if (action === 'snooze') {
-                path = '/api/actions/snooze';
-                params.set('minutes', '15');
-            }
             const resp = await fetch(`${API_BASE}${path}?${params.toString()}`, { method: 'POST' });
             if (resp.status === 401) {
                 alert('Invalid action token.');

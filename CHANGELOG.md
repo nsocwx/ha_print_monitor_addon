@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.13
+
+- Removed Acknowledge and Snooze from dashboard and mobile notification actions.
+- Kept Ignore as the operator dismissal action alongside Pause.
+- Added optional per-printer `print_progress_entity` support and dashboard progress display.
+
 ## 0.3.12
 
 - Fixed Home Assistant pause service calls to send `entity_id` as service data for `button.press`.

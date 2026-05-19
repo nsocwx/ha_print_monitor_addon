@@ -64,6 +64,7 @@ printers:
     name: MK4s
     camera_entity: camera.example_camera
     printer_state_entity: sensor.example_printer_state
+    print_progress_entity: sensor.example_print_progress
     printing_states:
       - printing
       - Printing
@@ -82,7 +83,6 @@ monitoring:
   certainty_threshold_notify: 0.70
   certainty_threshold_auto_pause: 0.85
   auto_pause_delay_minutes: 15
-  snooze_minutes: 15
   cooldown_minutes: 10
 model:
   provider: onnx

@@ -70,6 +70,7 @@ class PrintMonitorService:
         self.last_inference_duration_ms: Optional[float] = None
         self.model_status = "initialized" if self.analyzer.initialized else "uninitialized"
         self.printer_state: Optional[str] = None
+        self.print_progress: Optional[float] = None
         self.active_event_id: Optional[str] = None
         self.pending_detection_count = 0
         self.pending_issue_type: Optional[str] = None
@@ -123,6 +124,7 @@ class PrintMonitorService:
             state_response = await self.ha_service.get_state(state_entity)
             current_state = state_response.get("state", "unknown")
             self.printer_state = current_state
+            await self._update_print_progress()
 
             # Only capture/analyze while the printer is actively printing.
             is_printing = self.is_printer_printing(current_state)
@@ -249,6 +251,38 @@ class PrintMonitorService:
     def _normalize_printer_state(state: Optional[str]) -> str:
         """Normalize Home Assistant printer states for conservative comparisons."""
         return (state or "").strip().lower()
+
+    async def _update_print_progress(self):
+        """Read optional print progress percentage from Home Assistant."""
+        if not self.printer.print_progress_entity:
+            self.print_progress = None
+            return
+
+        try:
+            progress_response = await self.ha_service.get_state(self.printer.print_progress_entity)
+            self.print_progress = self._parse_progress_value(progress_response.get("state"))
+        except Exception as exc:
+            self.print_progress = None
+            logger.warning(
+                "Could not read print progress entity %s for %s: %s",
+                self.printer.print_progress_entity,
+                self.printer_name,
+                exc,
+            )
+
+    @staticmethod
+    def _parse_progress_value(value) -> Optional[float]:
+        """Parse a Home Assistant progress state into a bounded percentage."""
+        if value is None:
+            return None
+        text = str(value).strip().rstrip("%")
+        if not text or text.lower() in {"unknown", "unavailable", "none"}:
+            return None
+        try:
+            progress = float(text)
+        except ValueError:
+            return None
+        return max(0.0, min(100.0, progress))
 
     def _confirm_detection(self, result) -> bool:
         """Track consecutive matching detections before acting."""
@@ -378,7 +412,7 @@ class PrintMonitorService:
                     select(PrinterEvent).where(PrinterEvent.event_id == self.active_event_id)
                 ).first()
 
-                if event and event.status in ("active", "acknowledged", "pending_pause"):
+                if event and event.status in ("active", "pending_pause"):
                     # Same or similar issue - update event
                     event.certainty = max(event.certainty, result.certainty)
                     event.updated_at = datetime.utcnow()
@@ -523,7 +557,6 @@ class PrintMonitorService:
                 # The add-on websocket listener consumes these signed one-time tokens.
                 pause_token = create_action_token(self.config, event.event_id, "pause", event.printer_id)
                 ignore_token = create_action_token(self.config, event.event_id, "ignore", event.printer_id)
-                snooze_token = create_action_token(self.config, event.event_id, "snooze", event.printer_id)
                 # Build notification data
                 title = f"Possible Print Issue Detected: {self.printer_name}"
                 message = (
@@ -550,10 +583,6 @@ class PrintMonitorService:
                         {
                             "action": build_notification_action("ignore", ignore_token),
                             "title": "Ignore",
-                        },
-                        {
-                            "action": build_notification_action("snooze", snooze_token),
-                            "title": f"Snooze {self.config.monitoring.snooze_minutes}m",
                         },
                     ],
                 }
@@ -643,7 +672,7 @@ class PrintMonitorService:
                 select(PrinterEvent).where(PrinterEvent.event_id == event_id)
             ).first()
 
-            if event and event.status not in ("resolved", "paused", "ignored", "snoozed"):
+            if event and event.status not in ("resolved", "paused", "ignored"):
                 event.status = "resolved"
                 event.resolved_at = datetime.utcnow()
                 event.add_action("auto_resolved", {})

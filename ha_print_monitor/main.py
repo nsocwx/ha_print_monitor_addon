@@ -303,9 +303,11 @@ def _printer_status_response(
         printer_name=service.printer_name,
         camera_entity=service.printer.camera_entity,
         printer_state_entity=service.printer.printer_state_entity,
+        print_progress_entity=service.printer.print_progress_entity,
         running=service.running,
         monitoring_enabled=config.monitoring.enabled,
         printer_state=service.printer_state,
+        print_progress=service.print_progress,
         printer_printing=service.is_printer_printing(),
         last_capture_time=service.last_capture_time,
         last_capture_image_url=(
@@ -353,6 +355,7 @@ async def get_status(
         running=printer_status.running,
         monitoring_enabled=config.monitoring.enabled,
         printer_state=printer_status.printer_state,
+        print_progress=printer_status.print_progress,
         printer_printing=printer_status.printer_printing,
         last_capture_time=printer_status.last_capture_time,
         last_capture_image_url=printer_status.last_capture_image_url,
@@ -382,12 +385,14 @@ async def get_config(printer_id: Optional[str] = None) -> ConfigResponse:
         home_assistant_url="Supervisor Core API",
         camera_entity=config.home_assistant.camera_entity,
         printer_state_entity=config.home_assistant.printer_state_entity,
+        print_progress_entity=config.home_assistant.print_progress_entity,
         selected_printer={
                 "id": service.printer.id,
                 "name": service.printer.name,
                 "enabled": service.printer.enabled,
             "camera_entity": service.printer.camera_entity,
             "printer_state_entity": service.printer.printer_state_entity,
+            "print_progress_entity": service.printer.print_progress_entity,
             "printing_states": service.printer.printing_states,
             "pause_service": {
                 "domain": service.printer.pause_service.domain,
@@ -414,6 +419,7 @@ async def get_config(printer_id: Optional[str] = None) -> ConfigResponse:
                 "enabled": printer.enabled,
                 "camera_entity": printer.camera_entity,
                 "printer_state_entity": printer.printer_state_entity,
+                "print_progress_entity": printer.print_progress_entity,
             }
             for printer in config.get_printers()
         ],

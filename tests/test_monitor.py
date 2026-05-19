@@ -40,3 +40,11 @@ def test_unconfigured_printing_variant_is_not_assumed_printing():
 
     assert service.is_printer_printing("printing") is True
     assert service.is_printer_printing("printing_streaming") is False
+
+
+def test_progress_value_parsing():
+    assert PrintMonitorService._parse_progress_value("42") == 42.0
+    assert PrintMonitorService._parse_progress_value("42.5%") == 42.5
+    assert PrintMonitorService._parse_progress_value("-5") == 0.0
+    assert PrintMonitorService._parse_progress_value("105") == 100.0
+    assert PrintMonitorService._parse_progress_value("unknown") is None

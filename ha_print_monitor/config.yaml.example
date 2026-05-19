@@ -8,6 +8,7 @@ home_assistant:
   token: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."  # Your long-lived token
   camera_entity: "camera.prusa_camera"
   printer_state_entity: "sensor.prusa_print_status"
+  print_progress_entity: "sensor.prusa_print_progress"
   printing_states:
     - "printing"
     # Only states that mean the printer is actively extruding/printing should
@@ -85,8 +86,6 @@ monitoring:
   # as a protection setting for workflows that suppress repeated action prompts.
   cooldown_minutes: 10
 
-  # Minutes used by dashboard/mobile notification snooze actions.
-  snooze_minutes: 15
   min_analysis_interval_seconds: 0
   confirmation_window_minutes: 5
   required_issue_consistency: true
