@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.14
+
+- Added no-cache headers for the dashboard HTML so removed action buttons do not linger in Home Assistant or browser cache.
+- Kept the dashboard action surface limited to Pause and Ignore.
+
 ## 0.3.13
 
 - Removed Acknowledge and Snooze from dashboard and mobile notification actions.

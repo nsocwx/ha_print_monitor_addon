@@ -540,4 +540,11 @@ async def dashboard():
     if not dashboard_file.exists():
         return "<h1>HA Print Monitor</h1><p>Dashboard coming soon...</p>"
 
-    return FileResponse(dashboard_file)
+    return FileResponse(
+        dashboard_file,
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        },
+    )
